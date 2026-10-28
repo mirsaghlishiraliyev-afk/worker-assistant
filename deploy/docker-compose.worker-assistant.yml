@@ -1,0 +1,31 @@
+# Mövcud stack faylına (asis_timer ilə eyni fayla) «services:» altına əlavə edin.
+# WA_PAROL-u bura açıq yazmayın: TeamCity-də gizli parametr kimi saxlayın və deploy zamanı ötürün
+# (məs. stack faylında ${WA_PAROL} və `WA_PAROL=... docker stack deploy ...`).
+services:
+  worker_assistant:
+    image: worker-assistant-dev-image
+    environment:
+      WA_HOST: 0.0.0.0
+      WA_PORT: 8000
+      WA_DATA: /data
+      WA_LLM: qayda            # lokal rejim: məlumat serverdən kənara çıxmır
+      WA_SIRKET: "Aqrar Sığorta Fondu"
+      WA_ISTIFADECI: muhasib
+      WA_PAROL: ${WA_PAROL}
+    volumes:
+      - /asis/worker-assistant:/data          # yüklənən fayllar, 1C keşi, hesabatlar, mühasibin qaydaları
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - target: 8000
+        published: 4460                        # serverdə boş port seçin
+        protocol: tcp
+        mode: host
+    deploy:
+      replicas: 1                              # sessiya yaddaşdadır: mütləq 1 nüsxə
+      restart_policy:
+        condition: on-failure
+      placement:
+        constraints:
+          - node.hostname == test.server
+    networks:
+      - asis_dev_network

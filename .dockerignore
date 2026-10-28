@@ -1,0 +1,15 @@
+# real məlumat və lokal fayllar obraza düşməsin
+data/
+hesabatlar/
+*_hesabati.xlsx
+~$*.xlsx
+.venv/
+venv/
+.git/
+.github/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.env
+Claude outputs/
+arxiv/

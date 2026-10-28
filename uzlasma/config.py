@@ -1,6 +1,8 @@
 """Bütün şirkətə xas ayarlar buradadır. Kodu dəyişmədən yeni şirkətə uyğunlaşdırmaq üçün yalnız bu faylı redaktə edin."""
 
-SIRKET_ADI = "Test MMC"
+import os
+
+SIRKET_ADI = os.environ.get("WA_SIRKET", "Test MMC")
 VALYUTA = "AZN"
 EDV_DERECESI = 0.18
 DOZUM = 0.10                 # 10 qəpiyə qədər fərq uyğun sayılır (mühasibin cavabı)

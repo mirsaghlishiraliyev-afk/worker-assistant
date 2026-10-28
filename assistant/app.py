@@ -1,12 +1,15 @@
 """Veb server: söhbət, fayl yükləmə, təsdiq və hesabat endpoint-ləri."""
+import base64
 import datetime as dt
+import os
 import pathlib
+import secrets
 import re
 import threading
 import uuid
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -22,6 +25,33 @@ app = FastAPI(title="Worker's Assistant")
 S = Sessiya()
 BASLAMA = dt.datetime.now()
 AI = llm.sec()
+
+# Giriş: WA_PAROL verilibsə, bütün səhifə və API HTTP Basic ilə qorunur (serverdə mütləq).
+ISTIFADECI = os.environ.get("WA_ISTIFADECI", "muhasib")
+PAROL = os.environ.get("WA_PAROL", "")
+
+
+@app.middleware("http")
+async def giris(request: Request, call_next):
+    if PAROL and request.url.path != "/saglamliq":
+        h = request.headers.get("authorization", "")
+        ok = False
+        if h.lower().startswith("basic "):
+            try:
+                ad, _, p = base64.b64decode(h[6:]).decode("utf-8").partition(":")
+                ok = secrets.compare_digest(ad, ISTIFADECI) & secrets.compare_digest(p, PAROL)
+            except Exception:
+                ok = False
+        if not ok:
+            return Response("Giriş tələb olunur", status_code=401,
+                            headers={"WWW-Authenticate": 'Basic realm="Worker\'s Assistant", charset="UTF-8"'})
+    return await call_next(request)
+
+
+@app.get("/saglamliq")
+def saglamliq():
+    """Docker/TeamCity yoxlaması üçün (girişsiz, məlumat qaytarmır)."""
+    return {"ok": True, "versiya": __version__}
 
 
 class Mesaj(BaseModel):
