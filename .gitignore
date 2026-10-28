@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+# Real məlumatlar heç vaxt repoya düşməməlidir
+data/
+hesabatlar/
+*_hesabati.xlsx
+~$*.xlsx
+.env
+# Claude-un göndərdiyi ekran görüntüləri
+Claude outputs/
