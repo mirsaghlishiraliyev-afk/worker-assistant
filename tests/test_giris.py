@@ -271,4 +271,15 @@ def test_adla_salamlasir():
     a = TestClient(app)
     _gir(a, "aynur", "Parol1")
     assert a.post("/api/sohbet", json={"mesaj": "Salam"}).json()["cavab"].startswith("Salam, Aynur")
-    assert "Aynur Məmmədova" in a.post("/api/sohbet", json={"mesaj": "Mən kiməm?"}).json()["cavab"]
+    assert "**Məmmədova**" in a.post("/api/sohbet", json={"mesaj": "Mən kiməm?"}).json()["cavab"]
+
+
+def test_ad_soyad_e_poctdan():
+    import types
+    from assistant import sohbet as SB
+    s = types.SimpleNamespace(istifadeci_adi="Mirsaghli Shiraliyev", istifadeci_login="mirsaghli.shiraliyev@asf.gov.az",
+                              fayl_var=False, excel=None)
+    for sual in ["Mənim adım nədir", "Soyadım nədir?", "Məni tanıyırsan?", "Mən kiməm"]:
+        c = SB.cavab(s, sual)
+        assert c and "**Mirsaghli**" in c and "**Shiraliyev**" in c and "mirsaghli.shiraliyev@asf.gov.az" in c, sual
+    assert SB.cavab(s, "Kür Avto-nun adı ilə borcu nə qədərdir?") is None   # iş sualı şablona düşmür

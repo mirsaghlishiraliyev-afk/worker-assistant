@@ -67,6 +67,7 @@ async def giris_yoxla(request: Request, call_next):
             _CARI.set(u["l"])
             request.state.istifadeci = u
             sessiya(u["l"]).istifadeci_adi = u.get("a") or u["l"]  # salamlaşmada adla müraciət üçün
+            sessiya(u["l"]).istifadeci_login = u["l"]
     return await call_next(request)
 
 

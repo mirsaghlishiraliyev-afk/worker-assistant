@@ -102,15 +102,24 @@ def _yaradan(s, rejim):
             f"Hazırkı iş rejimim: {rejim}. Hesablamaları öz modullarım aparır, AI yalnız sualı başa düşmək və izah etmək üçündür.")
 
 
-_MEN_KIM = r"\bmen kim\w*|\bmeni tanı\w*|\bmeni tani\w*|kim kimi daxil|hansi hesabla"
+_MEN_KIM = (r"\bmen kim\w*|\bmeni tani\w*|\bmeni taniy\w*|kim kimi daxil|hansi hesabla|\badim\b|\badimi\b|\bsoyad\w*|"
+            r"\bfamil\w*|\bmenim ad|\bmenim mail|\bmailim|\bpoctum|e ?poct unvanim|\bkim oldugumu")
 
 
 def _men_kim(s, rejim):
     ad = getattr(s, "istifadeci_adi", "")
+    mail = getattr(s, "istifadeci_login", "")
     if not ad:
         return "Sistem lokal rejimdə işləyir — giriş olmadan, ona görə sizi adla tanımıram."
-    return (f"Siz **{ad}**-siniz — şirkət e-poçtunuzla daxil olmusunuz. Söhbətləriniz və yüklədiyiniz fayllar yalnız "
-            f"sizə görünür; istənilən kompüterdən daxil olsanız, söhbətləriniz sol paneldə olacaq.")
+    hisseler = ad.split()
+    if len(hisseler) >= 2:
+        metn = f"Adınız **{hisseler[0]}**, soyadınız **{' '.join(hisseler[1:])}**"
+    else:
+        metn = f"Adınız **{ad}**"
+    if "@" in mail:
+        metn += f" — e-poçt ünvanınızdan ({mail}) götürdüm"
+    return (metn + ". Söhbətləriniz və yüklədiyiniz fayllar yalnız sizə görünür; istənilən kompüterdən daxil olsanız, "
+            "söhbətləriniz sol paneldə olacaq.")
 
 
 NIYYETLER = [  # sıra önəmlidir: daha dəqiq olanlar əvvəl
@@ -122,6 +131,8 @@ NIYYETLER = [  # sıra önəmlidir: daha dəqiq olanlar əvvəl
 def cavab(s, mesaj, rejim=""):
     """Şablon sual olarsa cavab mətni qaytarır, əks halda None."""
     n = _norm(mesaj)
+    if re.search(_MEN_KIM, n) and len(n.split()) <= 8:  # «Mənim adım nədir?» iş sualı deyil
+        return _men_kim(s, rejim)
     if not n.strip() or _is_suali(n):
         return None
     tapilan = [f for p, f in NIYYETLER if re.search(p, n)]
