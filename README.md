@@ -155,16 +155,30 @@ Fayllar: `Dockerfile`, `.dockerignore`, `deploy/docker-compose.worker-assistant.
    ```sh
    sudo mkdir -p /asis/worker-assistant && sudo chown 10001:10001 /asis/worker-assistant
    ```
-2. **Stack faylına** `deploy/docker-compose.worker-assistant.yml`-dakı `worker_assistant` servisini əlavə edin (`asis_timer` ilə eyni fayl, eyni `asis_dev_network`, `node.hostname == test.server`). Portu (`published: 4460`) serverdə boş olanla əvəz edin.
-3. **Parol (bir dəfə, Docker secret):** `printf '%s' 'PAROL' | docker secret create wa_parol -`. Parolu dəyişmək: servisdən secret-i çıxarıb yenisini yaratmaq (`docker service update --secret-rm wa_parol ...`).
-4. **TeamCity:** VCS root — bu GitHub repo; build addımı — Command Line: `sh deploy/teamcity_build.sh`; agent test.server-də olmalıdır (obraz registry-yə göndərilmir, lokal qalır). Stack adı fərqlidirsə: `env.WA_STACK`.
-5. **İlk dəfə:** `docker stack deploy -c <stack faylı> asis_dev`. Sonrakı build-lər servisi yeni obrazla özü yeniləyir.
+2. **Kuki açarı (bir dəfə, Docker secret):** `openssl rand -hex 32 | docker secret create wa_sessiya_acari -`
+3. **Stack faylına** `deploy/docker-compose.worker-assistant.yml`-dakı servisi əlavə edin.
+4. **TeamCity:** VCS root — bu GitHub repo; build addımı — Command Line: `sh deploy/teamcity_build.sh`; agent servisin node-unda olmalıdır (obraz registry-yə göndərilmir). Stack adı: `env.WA_STACK`.
+5. **İlk dəfə:** `docker stack deploy -c <stack faylı> <stack adı>`. Sonrakı build-lər servisi özü yeniləyir.
+
+### Giriş (şirkət e-poçtu, XDMX mail.gov.az)
+
+- İşçi Outlook-a yazdığı e-poçt ünvanı (`ad.soyad@asf.gov.az` və ya sadəcə `ad.soyad`) və parolu ilə daxil olur. Sistem parolu saxlamır: hər girişdə `mail.gov.az` poçt serverində IMAP (SSL, 993) ilə yoxlayır.
+- `WA_IMAP_DOMEN=asf.gov.az`: mail.gov.az-da başqa qurumların işçiləri girə bilməz.
+- Kimin girəcəyini daraltmaq üçün: `WA_ICAZELI` və ya `/asis/worker-assistant/icazeli_istifadeciler.txt` (hər sətirdə bir ünvan; fayl redeploy olmadan dərhal qüvvəyə minir).
+- Sonra brauzerə imzalı, HttpOnly kuki verilir (`WA_SESSIYA_SAAT`, susmaya görə 8 saat). «Çıxış» sol panelin altındadır.
+- 10 dəqiqədə 5 uğursuz cəhddən sonra həmin ünvan 10 dəqiqə bloklanır (poçt hesabının XDMX tərəfindən bloklanmasının qarşısını da alır).
+- Hər istifadəçinin öz sessiyası var: başqasının yüklədiyi faylı, söhbətini və hesabatını görmür.
+- `WA_HOST=0.0.0.0` olanda giriş (`WA_IMAP_HOST`) mütləqdir, yoxsa server işə düşmür. Lokal (127.0.0.1) işlədəndə giriş tələb olunmur.
+- Şirkətin öz Active Directory-si olsa, IMAP əvəzinə `WA_LDAP_*` ilə də işləyir (bax: `assistant/giris.py`).
+
+Serverdən yoxlama: `openssl s_client -connect mail.gov.az:993 -brief </dev/null` — «Verification: OK» olmalıdır.
+
+mail.gov.az-ın sertifikatı vaxtı keçmiş və ya başqa ada verilmiş olsa (2026-10-da belədir: CN=cg.gov.az, 06.10.2026-da bitib), yoxlama söndürülmür — `WA_IMAP_PIN` ilə məhz həmin sertifikata sancılır. Başqa sertifikat gəlsə, parol göndərilmir. XDMX sertifikatı yeniləyəndə `WA_IMAP_PIN` silinməlidir.
 
 Qeydlər:
 
 - Obraz build olunarkən testlər işləyir — test sınsa, obraz yaranmır.
-- `WA_HOST=0.0.0.0` olanda parol (secret `wa_parol` və ya `WA_PAROL`) mütləqdir, yoxsa server işə düşmür. Brauzer giriş pəncərəsi açır (istifadəçi: `WA_ISTIFADECI`, susmaya görə `muhasib`).
 - Sağlamlıq yoxlaması: `GET /saglamliq` (girişsiz, məlumat qaytarmır).
 - Real məlumat yalnız `/asis/worker-assistant` volume-dadır, obraza və repoya düşmür. `WA_LLM=qayda` — məlumat serverdən kənara çıxmır.
-- Pilot versiyada sessiya bir nəfərlikdir (yaddaşdadır): eyni anda iki nəfər işləsə, eyni faylı görəcək. Ona görə `replicas: 1`.
-- Əlaqə HTTP-dir; parol şəbəkədə açıq gedir. Test şəbəkəsindən kənara açılacaqsa, qarşısına HTTPS (reverse proxy) qoyulmalıdır.
+- Sessiyalar yaddaşdadır: `replicas: 1`; server yenidən başlayanda yüklənmiş fayllar yenidən yüklənməlidir.
+- Əlaqə HTTP-dirsə, parol brauzerdən serverə açıq gedir — Caddy ilə HTTPS qoyulmalıdır (domen girişi ilə bu xüsusilə vacibdir).

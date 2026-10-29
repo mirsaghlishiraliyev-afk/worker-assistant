@@ -1,20 +1,18 @@
 """Veb server: söhbət, fayl yükləmə, təsdiq və hesabat endpoint-ləri."""
-import base64
+import contextvars
 import datetime as dt
-import os
 import pathlib
-import secrets
 import re
 import threading
 import uuid
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import __version__, llm
-from .giris import parol
+from . import giris as G
 from . import sohbet as SB
 from . import teklif as TK
 from .modullar import bank as BANK
@@ -23,30 +21,90 @@ from .state import HESABATLAR, YUKLEMELER, Sessiya
 
 STATIC = pathlib.Path(__file__).parent / "static"
 app = FastAPI(title="Worker's Assistant")
-S = Sessiya()
 BASLAMA = dt.datetime.now()
 AI = llm.sec()
 
-# Giriş: WA_PAROL verilibsə, bütün səhifə və API HTTP Basic ilə qorunur (serverdə mütləq).
-ISTIFADECI = os.environ.get("WA_ISTIFADECI", "muhasib")
-PAROL = parol()  # WA_PAROL və ya Docker secret (/run/secrets/wa_parol)
+# ---------------- hər istifadəçinin öz sessiyası ----------------
+# Giriş aktivdirsə, hər domen istifadəçisinin öz faylı, söhbəti və nəticələri olur (bir-birini görmürlər).
+_CARI = contextvars.ContextVar("istifadeci", default="")
+_SESSIYALAR, _SK = {}, threading.Lock()
+
+
+def sessiya(login=None):
+    login = _CARI.get() if login is None else login
+    with _SK:
+        if login not in _SESSIYALAR:
+            _SESSIYALAR[login] = Sessiya()
+            _SESSIYALAR[login].icazeli_fayllar = set()
+        return _SESSIYALAR[login]
+
+
+class _Proksi:
+    """Kod «S.excel», «S.yukle(...)» yazır — proksi bunu cari istifadəçinin sessiyasına yönləndirir."""
+    def __getattr__(self, k):
+        return getattr(sessiya(), k)
+
+    def __setattr__(self, k, v):
+        setattr(sessiya(), k, v)
+
+
+S = _Proksi()
+
+# ---------------- giriş (şirkət e-poçtu: IMAP mail.gov.az və ya domen) ----------------
+ACIQ = {"/saglamliq", "/giris", "/static/logo.svg", "/static/favicon.svg"}
 
 
 @app.middleware("http")
-async def giris(request: Request, call_next):
-    if PAROL and request.url.path != "/saglamliq":
-        h = request.headers.get("authorization", "")
-        ok = False
-        if h.lower().startswith("basic "):
-            try:
-                ad, _, p = base64.b64decode(h[6:]).decode("utf-8").partition(":")
-                ok = secrets.compare_digest(ad, ISTIFADECI) & secrets.compare_digest(p, PAROL)
-            except Exception:
-                ok = False
-        if not ok:
-            return Response("Giriş tələb olunur", status_code=401,
-                            headers={"WWW-Authenticate": 'Basic realm="Worker\'s Assistant", charset="UTF-8"'})
+async def giris_yoxla(request: Request, call_next):
+    if G.aktiv():
+        u = G.kuki_oxu(request.cookies.get(G.KUKI))
+        if not u and request.url.path not in ACIQ:
+            if request.url.path.startswith("/api/"):
+                return JSONResponse({"detail": "Giriş tələb olunur", "giris": True}, status_code=401)
+            return RedirectResponse("/giris", status_code=303)
+        if u:
+            _CARI.set(u["l"])
+            request.state.istifadeci = u
     return await call_next(request)
+
+
+def _https(request):
+    return request.url.scheme == "https" or request.headers.get("x-forwarded-proto", "").lower() == "https"
+
+
+@app.get("/giris")
+def giris_sehifesi(request: Request):
+    if not G.aktiv() or G.kuki_oxu(request.cookies.get(G.KUKI)):
+        return RedirectResponse("/", status_code=303)
+    return HTMLResponse(G.sehife())
+
+
+@app.post("/giris")
+def giris_et(request: Request, login: str = Form(""), parol: str = Form("")):
+    if not G.aktiv():
+        return RedirectResponse("/", status_code=303)
+    acar = f"{(login or '').strip().lower()}|{request.client.host if request.client else ''}"
+    if G.bloklanib(acar):
+        return HTMLResponse(G.sehife("Çox sayda uğursuz cəhd. 10 dəqiqə sonra yenidən yoxlayın.", login), status_code=429)
+    try:
+        u = G.YOXLAYICI(login, parol)
+    except G.GirisXetasi as x:
+        return HTMLResponse(G.sehife(str(x), login), status_code=503)
+    if not u:
+        G.ugursuz(acar)
+        return HTMLResponse(G.sehife("İstifadəçi adı və ya parol səhvdir.", login), status_code=401)
+    G.ugurlu(acar)
+    r = RedirectResponse("/", status_code=303)
+    r.set_cookie(G.KUKI, G.kuki_yarat(u), max_age=int(G.SESSIYA_SAAT * 3600), httponly=True,
+                 samesite="lax", secure=_https(request), path="/")
+    return r
+
+
+@app.get("/cixis")
+def cixis():
+    r = RedirectResponse("/giris" if G.aktiv() else "/", status_code=303)
+    r.delete_cookie(G.KUKI, path="/")
+    return r
 
 
 @app.get("/saglamliq")
@@ -71,7 +129,8 @@ def index():
 
 
 @app.get("/api/veziyyet")
-def veziyyet():
+def veziyyet(request: Request = None):
+    u = getattr(request.state, "istifadeci", None) if request is not None else None
     ex = None
     if S.excel:
         vv = S.excel["vereqler"]
@@ -81,6 +140,7 @@ def veziyyet():
             "modullar": T.modullar(), "versiya": __version__, "baslama": f"{BASLAMA:%H:%M}",
             "xulase": T.xulase(S)["ui"] if S.hazir else None,
             "teklifler": getattr(S, "teklifler", []),
+            "istifadeci": {"ad": u.get("a") or u["l"], "login": u["l"]} if u else None,
             "sablon": S.sablon["ad"] if getattr(S, "sablon", None) else None,
             "bank": ({"daxilolma": len(S.bank["setirler"]), "yoxlanmali": sum(r["kateqoriya"] == "yoxlanmali" for r in S.bank["setirler"]),
                       "sual": len(BANK._sual_setirleri(S.bank)),
@@ -112,12 +172,14 @@ async def yukle(fayl: list[UploadFile] = File(...), dovr_sonu: str = Form("")):
     except ValueError:
         raise HTTPException(400, "Dövrün sonu düzgün tarix deyil")
     is_id = uuid.uuid4().hex[:10]
-    ISLER[is_id] = {"status": "isleyir", "i": 0, "n": 0, "vereq": ""}
+    login = _CARI.get()  # arxa plan axınında istifadəçi kontekstdən gəlmir: əvvəlcədən götürülür
+    ISLER[is_id] = {"status": "isleyir", "i": 0, "n": 0, "vereq": "", "_sahib": login}
 
     def progress(i, n, vereq):
         ISLER[is_id].update(i=i + 1, n=n, vereq=vereq)
 
     def isci():
+        _CARI.set(login)
         try:
             with KILID:
                 sablonlar = [(y, a) for y, a in yollar if BANK.sablon_mi(y)]
@@ -142,9 +204,9 @@ async def yukle(fayl: list[UploadFile] = File(...), dovr_sonu: str = Form("")):
 
 @app.get("/api/yukle/{is_id}")
 def yukle_veziyyeti(is_id: str):
-    if is_id not in ISLER:
+    if is_id not in ISLER or ISLER[is_id].get("_sahib") != _CARI.get():
         raise HTTPException(404, "İş tapılmadı")
-    return ISLER[is_id]
+    return {k: v for k, v in ISLER[is_id].items() if not k.startswith("_")}
 
 
 class Dovr(BaseModel):
@@ -179,6 +241,10 @@ def sohbet(m: Mesaj):
     except Exception as e:
         return {"cavab": f"AI xidmətinə qoşulmaq alınmadı: {e}", "hadiseler": []}
     S.tarixce += [{"role": "user", "content": m.mesaj}, {"role": "assistant", "content": cavab or "…"}]
+    for h in hadiseler:  # istifadəçi yalnız özünə hazırlanmış faylları yükləyə bilər
+        ui = h.get("ui") or {}
+        for f in ([ui] if ui.get("tip") == "fayl" else ui.get("fayllar", []) if ui.get("tip") == "fayllar" else []):
+            S.icazeli_fayllar.add(f["ad"])
     if any(h.get("alet") in ("bank_teyin", "bank_kec", "hesab_ayarla") for h in hadiseler):
         S.teklifler = TK.hazirla(S)  # say dəyişdi (məs. yoxlanmalılar azaldı)
     return {"cavab": cavab, "hadiseler": hadiseler}
@@ -205,6 +271,8 @@ def tesdiq(t: Tesdiq):
 @app.get("/api/fayl/{ad}")
 def fayl(ad: str):
     yol = (HESABATLAR / ad).resolve()
+    if G.aktiv() and ad not in S.icazeli_fayllar:
+        raise HTTPException(404, "Fayl tapılmadı")
     if yol.parent != HESABATLAR.resolve() or not yol.exists():
         raise HTTPException(404, "Fayl tapılmadı")
     return FileResponse(yol, filename=ad)

@@ -1,8 +1,10 @@
-# Mövcud stack faylına (asis_timer ilə eyni fayla) əlavə edin:
-#   - «services:» altına worker_assistant servisini,
-#   - faylın sonuna (top-level) «secrets:» blokunu (artıq varsa, içinə wa_parol sətrini).
-# Parol Docker secret-dədir — compose faylında, TeamCity-də və `docker inspect`-də görünmür.
-# Serverdə BİR DƏFƏ:  printf '%s' 'PAROL' | docker secret create wa_parol -
+# Mövcud stack faylına əlavə edin: «services:» altına worker_assistant servisini,
+# faylın sonundakı «secrets:» blokuna wa_sessiya_acari sətrini.
+#
+# Giriş: işçilər şirkət e-poçtu ilə daxil olur (Outlook-a yazdıqları ünvan və parol). Sistem parolu saxlamır —
+# hər girişdə mail.gov.az poçt serverində IMAP (SSL, 993) ilə yoxlayır.
+# Serverdə BİR DƏFƏ (kuki imzası üçün təsadüfi açar):
+#   openssl rand -hex 32 | docker secret create wa_sessiya_acari -
 services:
   worker_assistant:
     image: worker-assistant-dev-image
@@ -10,29 +12,38 @@ services:
       WA_HOST: 0.0.0.0
       WA_PORT: 8000
       WA_DATA: /data
-      WA_LLM: qayda            # lokal rejim: məlumat serverdən kənara çıxmır
-      WA_SIRKET: "Aqrar Sığorta Fondu"
-      WA_ISTIFADECI: muhasib
+      WA_LLM: qayda                                  # lokal rejim: məlumat serverdən kənara çıxmır
+      WA_SIRKET: "Aqrar Sigorta Fondu"
+      # --- giriş: şirkət e-poçtu (XDMX mail.gov.az, IMAP) — Outlook-a yazılan ünvan və parol ---
+      WA_IMAP_HOST: mail.gov.az
+      WA_IMAP_PORT: 993
+      WA_IMAP_DOMEN: asf.gov.az                      # yalnız @asf.gov.az ünvanları girə bilər
+      # mail.gov.az sertifikatı vaxtı keçmiş/başqa adadırsa (2026-10: CN=cg.gov.az, 06.10.2026-da bitib) — müvəqqəti
+      # həmin sertifikatın barmaq izi (XDMX yeniləyəndə silin):
+      #   openssl s_client -connect mail.gov.az:993 </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256
+      WA_IMAP_PIN: "BURAYA_BARMAQ_IZI"
+      # WA_ICAZELI: "ad.soyad@asf.gov.az,ad2.soyad2@asf.gov.az"   # və ya /asis/worker-assistant/icazeli_istifadeciler.txt
+      WA_SESSIYA_SAAT: 8
     secrets:
-      - wa_parol               # konteynerdə /run/secrets/wa_parol
+      - wa_sessiya_acari
     volumes:
-      - /asis/worker-assistant:/data          # yüklənən fayllar, 1C keşi, hesabatlar, mühasibin qaydaları
+      - /asis/worker-assistant:/data
       - /etc/localtime:/etc/localtime:ro
     ports:
       - target: 8000
-        published: 4460                        # serverdə boş port seçin
+        published: 4460
         protocol: tcp
         mode: host
     deploy:
-      replicas: 1                              # sessiya yaddaşdadır: mütləq 1 nüsxə
+      replicas: 1                                    # sessiyalar yaddaşdadır: mütləq 1 nüsxə
       restart_policy:
         condition: on-failure
       placement:
         constraints:
-          - node.hostname == test.server
+          - node.labels.role == primary_test
     networks:
       - asis_dev_network
 
 secrets:
-  wa_parol:
+  wa_sessiya_acari:
     external: true

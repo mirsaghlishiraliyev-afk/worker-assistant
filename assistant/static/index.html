@@ -301,6 +301,9 @@ main.bos .hazirlar{display:none!important}  /* boş ekranda sorğular aşağıda
 
 <script>
 const $ = s => document.querySelector(s);
+// giriş müddəti bitəndə (401) — giriş səhifəsinə
+const _fetch = window.fetch.bind(window);
+window.fetch = async (...a) => { const r = await _fetch(...a); if(r.status === 401) location.href = "/giris"; return r; };
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const ALET = {xulase:"Ümumi vəziyyət", istisnalar:"İstisnalar", baglantilar:"Bağlantılar", baglantini_tesdiqle:"Təsdiq",
   borclar:"Borclar", qaime_axtar:"Qaimə axtarışı", borc_mektubu:"Borc məktubu", hesabat_yarat:"Excel hesabatı",
@@ -366,12 +369,16 @@ function sideAlt(r){
   $("#faylBas").textContent = ad + (r.uzlasma ? " · " + r.dovr_sonu.split("-").reverse().join(".") : "");
 }
 // Server versiyası: kod yenilənib, server köhnə qalıbsa, bu yazı köhnə versiyanı göstərir
-const UI_VERSIYA = "0.9.1";
+const UI_VERSIYA = "1.1.1";
 function versiyaCiz(r){
   let el = $("#versiya");
   if(!el){ el = document.createElement("div"); el.id = "versiya"; el.style.cssText = "font:10.5px var(--mono);color:var(--dim);padding:6px 8px 0"; $("#yan").appendChild(el); }
   const kohne = r.versiya !== UI_VERSIYA;
-  el.innerHTML = `Server v${esc(r.versiya || "?")} · başladı ${esc(r.baslama || "?")}` +
+  if(r.istifadeci) window.waIstifadeci = r.istifadeci;
+  const u = window.waIstifadeci;
+  el.innerHTML = (u ? `<div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:4px;color:var(--text)">
+      <span title="${esc(u.login)}">👤 ${esc(u.ad)}</span><a href="/cixis" style="color:var(--red);text-decoration:none">Çıxış</a></div>` : "") +
+    `Server v${esc(r.versiya || "?")} · başladı ${esc(r.baslama || "?")}` +
     (kohne ? `<div style="color:var(--amber)">Server köhnə versiyadadır. Ctrl+C, sonra python -m assistant.</div>` : "");
 }
 function modullarCiz(mods){
@@ -566,7 +573,7 @@ async function yukle(){
     x.open("POST", "/api/yukle");
     x.upload.onprogress = e => { if(e.lengthComputable){ const f = Math.round(e.loaded / e.total * 100);
       $("#eSt").textContent = `Göndərilir… ${f}% (${(secilmisFayl.size / 1048576).toFixed(1)} MB)`; basliq(`Fayl göndərilir… ${f}%`); } };
-    x.onload = () => { let j = null; try { j = JSON.parse(x.responseText); } catch {} res({ok: x.status < 300, status: x.status, j}); };
+    x.onload = () => { if(x.status === 401){ location.href = "/giris"; return; } let j = null; try { j = JSON.parse(x.responseText); } catch {} res({ok: x.status < 300, status: x.status, j}); };
     x.onerror = () => res({ok: false, status: 0, j: {detail: "Serverə qoşulmaq alınmadı. Server işləyirmi?"}});
     x.send(fd);
   });

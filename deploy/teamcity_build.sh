@@ -13,6 +13,6 @@ if docker service inspect "$SERVIS" >/dev/null 2>&1; then
   docker service update --force --image "worker-assistant-dev-image:${TEQ}" "$SERVIS"
 else
   echo "«$SERVIS» servisi hələ yoxdur. Serverdəki stack faylına deploy/docker-compose.worker-assistant.yml-dakı servisi əlavə edib"
-  echo "bir dəfə işə salın:  WA_PAROL=... docker stack deploy -c <stack faylı> $STACK"
+  echo "bir dəfə işə salın:  docker stack deploy -c <stack faylı> $STACK"
   exit 1
 fi
