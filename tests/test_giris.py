@@ -245,3 +245,30 @@ def test_imap_sertifikat_adi(monkeypatch):
         raise AssertionError
     except G.GirisXetasi as x:
         assert "Parol göndərilmədi" in str(x)
+
+
+def test_sohbetler_istifadeciye_gore():
+    _qur()
+    a, b = TestClient(app), TestClient(app)
+    _gir(a, "aynur", "Parol1")
+    _gir(b, "resad", "Parol2")
+    m = [{"rol": "user", "metn": "Xülasə"}, {"rol": "ai", "cavab": "58 daxilolma", "hadiseler": []}]
+    assert a.put("/api/sohbetler/abc1", json={"ad": "Oktyabr çıxarışı", "mesajlar": m}).status_code == 200
+    assert [s["ad"] for s in a.get("/api/sohbetler").json()] == ["Oktyabr çıxarışı"]
+    assert a.get("/api/sohbetler/abc1").json()["mesajlar"] == m
+    assert b.get("/api/sohbetler").json() == []                     # Rəşad Aynurun söhbətlərini görmür
+    assert b.get("/api/sohbetler/abc1").status_code == 404
+    assert a.put("/api/sohbetler/../x", json={"ad": "", "mesajlar": []}).status_code in (400, 404)
+    c = TestClient(app)                                              # başqa kompüterdən eyni istifadəçi
+    _gir(c, "aynur@asf.gov.az", "Parol1")
+    assert [s["id"] for s in c.get("/api/sohbetler").json()] == ["abc1"]
+    a.delete("/api/sohbetler/abc1")
+    assert a.get("/api/sohbetler").json() == []
+
+
+def test_adla_salamlasir():
+    _qur()
+    a = TestClient(app)
+    _gir(a, "aynur", "Parol1")
+    assert a.post("/api/sohbet", json={"mesaj": "Salam"}).json()["cavab"].startswith("Salam, Aynur")
+    assert "Aynur Məmmədova" in a.post("/api/sohbet", json={"mesaj": "Mən kiməm?"}).json()["cavab"]

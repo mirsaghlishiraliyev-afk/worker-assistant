@@ -67,8 +67,16 @@ def _bacariq(s, rejim):
     return "Bu cür sorğularla kömək edə bilərəm:\n" + "\n".join(misallar) + _fayl_ipucu(s)
 
 
+def _ad(s):
+    """Girişdə tanınan istifadəçinin adı (məs. «Mirsaghli Shiraliyev» -> «Mirsaghli»)."""
+    ad = (getattr(s, "istifadeci_adi", "") or "").split()
+    return ad[0] if ad and "@" not in ad[0] else ""
+
+
 def _salam(s, rejim):
-    giris = random.choice(["Salam! 👋", "Salam, xoş gördük!", "Salam!"])
+    ad = _ad(s)
+    giris = random.choice([f"Salam, {ad}! 👋", f"Salam, {ad}, xoş gördük!", f"Salam, {ad}!"] if ad else
+                          ["Salam! 👋", "Salam, xoş gördük!", "Salam!"])
     if s.fayl_var:
         return f"{giris} «{s.excel['ad']}» faylı yüklənib. Ümumi vəziyyətə baxaq, yoxsa konkret sualınız var?"
     return f"{giris} Mən Worker's Assistant-am. Bu gün hansı işi həll edək?" + _fayl_ipucu(s)
@@ -94,8 +102,19 @@ def _yaradan(s, rejim):
             f"Hazırkı iş rejimim: {rejim}. Hesablamaları öz modullarım aparır, AI yalnız sualı başa düşmək və izah etmək üçündür.")
 
 
+_MEN_KIM = r"\bmen kim\w*|\bmeni tanı\w*|\bmeni tani\w*|kim kimi daxil|hansi hesabla"
+
+
+def _men_kim(s, rejim):
+    ad = getattr(s, "istifadeci_adi", "")
+    if not ad:
+        return "Sistem lokal rejimdə işləyir — giriş olmadan, ona görə sizi adla tanımıram."
+    return (f"Siz **{ad}**-siniz — şirkət e-poçtunuzla daxil olmusunuz. Söhbətləriniz və yüklədiyiniz fayllar yalnız "
+            f"sizə görünür; istənilən kompüterdən daxil olsanız, söhbətləriniz sol paneldə olacaq.")
+
+
 NIYYETLER = [  # sıra önəmlidir: daha dəqiq olanlar əvvəl
-    (_YARADAN, _yaradan), (_KIM, _kim), (_BACARIQ, _bacariq), (_HAL, _hal),
+    (_MEN_KIM, _men_kim), (_YARADAN, _yaradan), (_KIM, _kim), (_BACARIQ, _bacariq), (_HAL, _hal),
     (_TESEKKUR, _tesekkur), (_SAGOL, _sagol), (_SALAM, _salam),
 ]
 
@@ -112,4 +131,5 @@ def cavab(s, mesaj, rejim=""):
     esas = tapilan[0]
     if esas is _salam or len(tapilan) == 1:
         return esas(s, rejim)
-    return "Salam! " + esas(s, rejim) if _salam in tapilan else esas(s, rejim)
+    ad = _ad(s)
+    return (f"Salam, {ad}! " if ad else "Salam! ") + esas(s, rejim) if _salam in tapilan else esas(s, rejim)

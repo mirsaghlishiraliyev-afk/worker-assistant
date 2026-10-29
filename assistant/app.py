@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from . import __version__, llm
 from . import giris as G
 from . import sohbet as SB
+from . import tarixce as TR
 from . import teklif as TK
 from .modullar import bank as BANK
 from . import tools as T
@@ -65,6 +66,7 @@ async def giris_yoxla(request: Request, call_next):
         if u:
             _CARI.set(u["l"])
             request.state.istifadeci = u
+            sessiya(u["l"]).istifadeci_adi = u.get("a") or u["l"]  # salamlaşmada adla müraciət üçün
     return await call_next(request)
 
 
@@ -115,6 +117,40 @@ def saglamliq():
 
 class Mesaj(BaseModel):
     mesaj: str
+
+
+class Sohbet(BaseModel):
+    ad: str = ""
+    mesajlar: list = []
+
+
+# ---------------- söhbət tarixçəsi (hər istifadəçinin özü) ----------------
+@app.get("/api/sohbetler")
+def sohbetler():
+    return TR.siyahi(_CARI.get())
+
+
+@app.get("/api/sohbetler/{sid}")
+def sohbet_al(sid: str):
+    s = TR.al(_CARI.get(), sid)
+    if not s:
+        raise HTTPException(404, "Söhbət tapılmadı")
+    return s
+
+
+@app.put("/api/sohbetler/{sid}")
+def sohbet_saxla(sid: str, s: Sohbet):
+    try:
+        TR.saxla(_CARI.get(), sid, s.ad, s.mesajlar)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
+@app.delete("/api/sohbetler/{sid}")
+def sohbet_sil(sid: str):
+    TR.sil(_CARI.get(), sid)
+    return {"ok": True}
 
 
 class Tesdiq(BaseModel):

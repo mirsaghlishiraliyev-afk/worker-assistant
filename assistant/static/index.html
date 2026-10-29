@@ -323,18 +323,43 @@ const REJIM_IKON = {
 
 // ---------- söhbət tarixçəsi (yalnız bu brauzerdə) ----------
 let sohbetler = [], aktiv = null, secilmisFayl = null, secilmisFayllar = [];
-try { sohbetler = JSON.parse(localStorage.getItem(ACAR) || "[]"); } catch { sohbetler = []; }
-const saxla = () => { try { localStorage.setItem(ACAR, JSON.stringify(sohbetler.slice(0, 50))); } catch {} };
+// Söhbətlər serverdə, hər istifadəçinin özündə saxlanır (istənilən kompüterdən açılır, başqası görmür)
+async function sohbetleriYukle(){
+  try { sohbetler = await fetch("/api/sohbetler").then(r => r.ok ? r.json() : []); } catch { sohbetler = []; }
+  // köhnə versiya söhbətləri brauzerdə saxlayırdı: girişsiz (lokal) rejimdə bir dəfə serverə köçürülür
+  try {
+    const kohne = JSON.parse(localStorage.getItem(ACAR) || "[]");
+    if(kohne.length && !window.waIstifadeci){
+      for(const s of kohne.slice(0, 50).reverse())
+        await fetch(`/api/sohbetler/${s.id}`, {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ad:s.ad, mesajlar:s.mesajlar||[]})});
+      localStorage.removeItem(ACAR);
+      sohbetler = await fetch("/api/sohbetler").then(r => r.json());
+    }
+  } catch {}
+  tarixceCiz();
+}
+const saxla = () => {
+  if(!aktiv) return;
+  const s = sohbetler.find(x => x.id === aktiv.id); if(s) s.ad = aktiv.ad;
+  fetch(`/api/sohbetler/${aktiv.id}`, {method:"PUT", headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({ad: aktiv.ad, mesajlar: aktiv.mesajlar})}).catch(() => {});
+};
 
 function tarixceCiz(){
   $("#tarixce").innerHTML = sohbetler.map(s =>
     `<div class="soh ${s.id === aktiv?.id ? "aktiv" : ""}" data-id="${s.id}"><span>${esc(s.ad)}</span><button class="sil" data-sil="${s.id}" title="Sil">✕</button></div>`).join("");
 }
-$("#tarixce").addEventListener("click", e => {
+$("#tarixce").addEventListener("click", async e => {
   const sil = e.target.closest("[data-sil]");
-  if(sil){ sohbetler = sohbetler.filter(s => s.id !== sil.dataset.sil); if(aktiv?.id === sil.dataset.sil) yeniSohbet(); saxla(); tarixceCiz(); return; }
+  if(sil){
+    const id = sil.dataset.sil;
+    sohbetler = sohbetler.filter(s => s.id !== id); if(aktiv?.id === id) yeniSohbet();
+    fetch(`/api/sohbetler/${id}`, {method:"DELETE"}).catch(() => {}); tarixceCiz(); return;
+  }
   const el = e.target.closest(".soh"); if(!el) return;
-  aktiv = sohbetler.find(s => s.id === el.dataset.id);
+  const s = await fetch(`/api/sohbetler/${el.dataset.id}`).then(r => r.ok ? r.json() : null).catch(() => null);
+  if(!s) return;
+  aktiv = {id: s.id, ad: s.ad, mesajlar: s.mesajlar || []};
   $("#sohbet").innerHTML = ""; aktiv.mesajlar.forEach(m => m.rol === "user" ? userMsj(m.metn) : aiMsj(m, false));
   $("#main").classList.toggle("bos", !aktiv.mesajlar.length); tarixceCiz();
 });
@@ -369,12 +394,20 @@ function sideAlt(r){
   $("#faylBas").textContent = ad + (r.uzlasma ? " · " + r.dovr_sonu.split("-").reverse().join(".") : "");
 }
 // Server versiyası: kod yenilənib, server köhnə qalıbsa, bu yazı köhnə versiyanı göstərir
-const UI_VERSIYA = "1.1.3";
+const UI_VERSIYA = "1.2.0";
 function versiyaCiz(r){
   let el = $("#versiya");
   if(!el){ el = document.createElement("div"); el.id = "versiya"; el.style.cssText = "font:10.5px var(--mono);color:var(--dim);padding:6px 8px 0"; $("#yan").appendChild(el); }
   const kohne = r.versiya !== UI_VERSIYA;
-  if(r.istifadeci) window.waIstifadeci = r.istifadeci;
+  if(r.istifadeci){
+    const ilk = !window.waIstifadeci;
+    window.waIstifadeci = r.istifadeci;
+    const ad = (r.istifadeci.ad || "").split(" ")[0];
+    if(ilk && ad && !ad.includes("@")){  // sistem istifadəçini tanıyır: adla salamlaşır
+      const kohne = BASLIQ; BASLIQ = `Salam, ${ad}! Bu gün hansı işi həll edək?`;
+      if($("#bos h1").textContent === kohne) basliq(BASLIQ);
+    }
+  }
   const u = window.waIstifadeci;
   el.innerHTML = (u ? `<div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:4px;color:var(--text)">
       <span title="${esc(u.login)}">👤 ${esc(u.ad)}</span><a href="/cixis" style="color:var(--red);text-decoration:none">Çıxış</a></div>` : "") +
@@ -510,7 +543,7 @@ async function gonder(metn){
   metn = metn.trim(); if(!metn || mesgul) return;
   mesgul = true; yeniləDuyme();
   $("#main").classList.remove("bos");
-  if(!aktiv){ aktiv = {id: Date.now().toString(36), ad: metn.slice(0, 40), mesajlar: []}; sohbetler.unshift(aktiv); tarixceCiz(); }
+  if(!aktiv){ aktiv = {id: Date.now().toString(36), ad: metn.slice(0, 40), mesajlar: []}; sohbetler.unshift({id: aktiv.id, ad: aktiv.ad}); tarixceCiz(); }
   aktiv.mesajlar.push({rol:"user", metn}); userMsj(metn);
   sonSual = metn;
   await cavabla(metn);
@@ -560,7 +593,7 @@ function xetaMetni(j, status){
   return `Xəta baş verdi${status ? " (" + status + ")" : ""}. Serveri yenidən başladıb yenidən cəhd edin.`;
 }
 async function xetaOxu(r){ let j = null; try { j = await r.json(); } catch {} return xetaMetni(j, r.status); }
-const BASLIQ = "Bu gün hansı işi həll edək?";
+let BASLIQ = "Bu gün hansı işi həll edək?";
 const basliq = t => { $("#bos h1").textContent = t; };
 async function yukle(){
   basliq("Fayl oxunur…");
@@ -673,7 +706,7 @@ $("#sohbet").addEventListener("input", e => {
 });
 
 tarixceCiz();
-veziyyet();
+veziyyet().then(sohbetleriYukle);
 yeniləDuyme();
 </script>
 </body>
