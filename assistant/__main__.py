@@ -11,12 +11,15 @@ import sys
 
 import uvicorn
 
+from assistant.giris import parol
+
 if __name__ == "__main__":
     host = os.environ.get("WA_HOST", "127.0.0.1")
     port = int(os.environ.get("WA_PORT", "8000"))
-    if host not in ("127.0.0.1", "localhost") and not os.environ.get("WA_PAROL"):
-        sys.exit("Təhlükəsizlik: server şəbəkəyə açılır (WA_HOST=%s), amma WA_PAROL verilməyib. "
-                 "Real maliyyə məlumatı parolsuz açıla bilməz — WA_ISTIFADECI və WA_PAROL təyin edin." % host)
+    if host not in ("127.0.0.1", "localhost") and not parol():
+        sys.exit("Təhlükəsizlik: server şəbəkəyə açılır (WA_HOST=%s), amma parol verilməyib. "
+                 "Real maliyyə məlumatı parolsuz açıla bilməz. Docker secret yaradın: "
+                 "printf '%%s' 'PAROL' | docker secret create wa_parol -  (və ya WA_PAROL mühit dəyişəni)." % host)
     print(f"Worker's Assistant: http://{host}:{port}")
     reload = os.environ.get("WA_RELOAD") == "1"
     uvicorn.run("assistant.app:app", host=host, port=port, reload=reload)

@@ -1,6 +1,8 @@
-# Mövcud stack faylına (asis_timer ilə eyni fayla) «services:» altına əlavə edin.
-# WA_PAROL-u bura açıq yazmayın: TeamCity-də gizli parametr kimi saxlayın və deploy zamanı ötürün
-# (məs. stack faylında ${WA_PAROL} və `WA_PAROL=... docker stack deploy ...`).
+# Mövcud stack faylına (asis_timer ilə eyni fayla) əlavə edin:
+#   - «services:» altına worker_assistant servisini,
+#   - faylın sonuna (top-level) «secrets:» blokunu (artıq varsa, içinə wa_parol sətrini).
+# Parol Docker secret-dədir — compose faylında, TeamCity-də və `docker inspect`-də görünmür.
+# Serverdə BİR DƏFƏ:  printf '%s' 'PAROL' | docker secret create wa_parol -
 services:
   worker_assistant:
     image: worker-assistant-dev-image
@@ -11,7 +13,8 @@ services:
       WA_LLM: qayda            # lokal rejim: məlumat serverdən kənara çıxmır
       WA_SIRKET: "Aqrar Sığorta Fondu"
       WA_ISTIFADECI: muhasib
-      WA_PAROL: ${WA_PAROL}
+    secrets:
+      - wa_parol               # konteynerdə /run/secrets/wa_parol
     volumes:
       - /asis/worker-assistant:/data          # yüklənən fayllar, 1C keşi, hesabatlar, mühasibin qaydaları
       - /etc/localtime:/etc/localtime:ro
@@ -29,3 +32,7 @@ services:
           - node.hostname == test.server
     networks:
       - asis_dev_network
+
+secrets:
+  wa_parol:
+    external: true

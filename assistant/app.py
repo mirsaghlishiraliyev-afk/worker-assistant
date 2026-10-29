@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import __version__, llm
+from .giris import parol
 from . import sohbet as SB
 from . import teklif as TK
 from .modullar import bank as BANK
@@ -28,7 +29,7 @@ AI = llm.sec()
 
 # Giriş: WA_PAROL verilibsə, bütün səhifə və API HTTP Basic ilə qorunur (serverdə mütləq).
 ISTIFADECI = os.environ.get("WA_ISTIFADECI", "muhasib")
-PAROL = os.environ.get("WA_PAROL", "")
+PAROL = parol()  # WA_PAROL və ya Docker secret (/run/secrets/wa_parol)
 
 
 @app.middleware("http")

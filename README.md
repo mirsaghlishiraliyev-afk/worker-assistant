@@ -156,13 +156,14 @@ Fayllar: `Dockerfile`, `.dockerignore`, `deploy/docker-compose.worker-assistant.
    sudo mkdir -p /asis/worker-assistant && sudo chown 10001:10001 /asis/worker-assistant
    ```
 2. **Stack faylına** `deploy/docker-compose.worker-assistant.yml`-dakı `worker_assistant` servisini əlavə edin (`asis_timer` ilə eyni fayl, eyni `asis_dev_network`, `node.hostname == test.server`). Portu (`published: 4460`) serverdə boş olanla əvəz edin.
-3. **TeamCity:** VCS root — bu GitHub repo; build addımı — Command Line: `sh deploy/teamcity_build.sh`; agent test.server-də olmalıdır (obraz registry-yə göndərilmir, lokal qalır). `WA_PAROL` — "Password" tipli parametr, stack deploy zamanı ötürülür. Stack adı fərqlidirsə: `env.WA_STACK`.
-4. **İlk dəfə:** `WA_PAROL=... docker stack deploy -c <stack faylı> asis_dev`. Sonrakı build-lər servisi yeni obrazla özü yeniləyir.
+3. **Parol (bir dəfə, Docker secret):** `printf '%s' 'PAROL' | docker secret create wa_parol -`. Parolu dəyişmək: servisdən secret-i çıxarıb yenisini yaratmaq (`docker service update --secret-rm wa_parol ...`).
+4. **TeamCity:** VCS root — bu GitHub repo; build addımı — Command Line: `sh deploy/teamcity_build.sh`; agent test.server-də olmalıdır (obraz registry-yə göndərilmir, lokal qalır). Stack adı fərqlidirsə: `env.WA_STACK`.
+5. **İlk dəfə:** `docker stack deploy -c <stack faylı> asis_dev`. Sonrakı build-lər servisi yeni obrazla özü yeniləyir.
 
 Qeydlər:
 
 - Obraz build olunarkən testlər işləyir — test sınsa, obraz yaranmır.
-- `WA_HOST=0.0.0.0` olanda `WA_PAROL` mütləqdir, yoxsa server işə düşmür. Brauzer giriş pəncərəsi açır (istifadəçi: `WA_ISTIFADECI`, susmaya görə `muhasib`).
+- `WA_HOST=0.0.0.0` olanda parol (secret `wa_parol` və ya `WA_PAROL`) mütləqdir, yoxsa server işə düşmür. Brauzer giriş pəncərəsi açır (istifadəçi: `WA_ISTIFADECI`, susmaya görə `muhasib`).
 - Sağlamlıq yoxlaması: `GET /saglamliq` (girişsiz, məlumat qaytarmır).
 - Real məlumat yalnız `/asis/worker-assistant` volume-dadır, obraza və repoya düşmür. `WA_LLM=qayda` — məlumat serverdən kənara çıxmır.
 - Pilot versiyada sessiya bir nəfərlikdir (yaddaşdadır): eyni anda iki nəfər işləsə, eyni faylı görəcək. Ona görə `replicas: 1`.
