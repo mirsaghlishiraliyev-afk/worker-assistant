@@ -18,10 +18,11 @@ services:
       WA_IMAP_HOST: mail.gov.az
       WA_IMAP_PORT: 993
       WA_IMAP_DOMEN: asf.gov.az                      # yalnız @asf.gov.az ünvanları girə bilər
+      WA_IMAP_SERT_ADI: "*.mail.gov.az"             # mail.gov.az-ın sertifikatı «*.mail.gov.az» adınadır
       # mail.gov.az sertifikatı vaxtı keçmiş/başqa adadırsa (2026-10: CN=cg.gov.az, 06.10.2026-da bitib) — müvəqqəti
       # həmin sertifikatın barmaq izi (XDMX yeniləyəndə silin):
       #   openssl s_client -connect mail.gov.az:993 </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256
-      WA_IMAP_PIN: "BURAYA_BARMAQ_IZI"
+      # WA_IMAP_PIN: "22:08:95:...:CF:E4"            # bir neçə dəyər vergüllə
       # WA_ICAZELI: "ad.soyad@asf.gov.az,ad2.soyad2@asf.gov.az"   # və ya /asis/worker-assistant/icazeli_istifadeciler.txt
       WA_SESSIYA_SAAT: 8
     secrets:

@@ -208,10 +208,38 @@ def test_imap_sertifikat_sancmasi(monkeypatch):
             pass
     import imaplib
     monkeypatch.setattr(imaplib, "IMAP4_SSL", Pinli)
-    monkeypatch.setattr(G, "IMAP_PIN", hashlib.sha256(der).hexdigest())
+    monkeypatch.setattr(G, "IMAP_PIN", True)
+    monkeypatch.setattr(G, "IMAP_PINLER", {"00" * 32, hashlib.sha256(der).hexdigest()})   # bir neçə node
     assert G.imap_yoxla("mirsaghli.shiraliyev", "DogruParol")["login"] == "mirsaghli.shiraliyev@asf.gov.az"
     assert yaxalanan["ctx"].verify_mode == ssl.CERT_NONE                 # vaxtı keçmiş sertifikat qəbul olunur...
-    monkeypatch.setattr(G, "IMAP_PIN", "00" * 32)                         # ...amma yalnız məhz o sertifikat
+    monkeypatch.setattr(G, "IMAP_PINLER", {"00" * 32})                    # ...amma yalnız məhz o sertifikat
+    try:
+        G.imap_yoxla("mirsaghli.shiraliyev", "DogruParol")
+        raise AssertionError
+    except G.GirisXetasi as x:
+        assert "Parol göndərilmədi" in str(x)
+
+
+def test_imap_sertifikat_adi(monkeypatch):
+    import ssl
+    _imap(monkeypatch)
+    yaxalanan = {}
+    sert = {"subject": ((("commonName", "*.mail.gov.az"),),), "subjectAltName": (("DNS", "*.mail.gov.az"),)}
+
+    class Adli(_SahteIMAP):
+        def __init__(self, host, port, ssl_context=None, timeout=None):
+            yaxalanan["ctx"] = ssl_context
+            self.sock = type("S", (), {"getpeercert": lambda self, binary_form=False: sert})()
+
+        def shutdown(self):
+            pass
+    import imaplib
+    monkeypatch.setattr(imaplib, "IMAP4_SSL", Adli)
+    monkeypatch.setattr(G, "IMAP_PIN", False)
+    monkeypatch.setattr(G, "IMAP_SERT_ADI", "*.mail.gov.az")
+    assert G.imap_yoxla("mirsaghli.shiraliyev", "DogruParol")
+    assert yaxalanan["ctx"].verify_mode == ssl.CERT_REQUIRED          # zəncir və vaxt yoxlanmaqda davam edir
+    monkeypatch.setattr(G, "IMAP_SERT_ADI", "mail.example.az")
     try:
         G.imap_yoxla("mirsaghli.shiraliyev", "DogruParol")
         raise AssertionError

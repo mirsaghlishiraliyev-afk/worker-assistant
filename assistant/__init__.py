@@ -1,2 +1,2 @@
 """Worker's Assistant: işçilərin əl ilə gördüyü təkrarlanan işləri avtomatlaşdıran AI köməkçi."""
-__version__ = "1.1.1"  # hər dəyişiklikdə artırılır; interfeysdə görünür ki, köhnə serverlə işləmədiyiniz bilinsin
+__version__ = "1.1.3"  # hər dəyişiklikdə artırılır; interfeysdə görünür ki, köhnə serverlə işləmədiyiniz bilinsin

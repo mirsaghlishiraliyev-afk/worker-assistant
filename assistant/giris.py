@@ -11,6 +11,9 @@ IMAP üçün mühit dəyişənləri:
   WA_IMAP_DOMEN   - icazəli e-poçt domeni, məs. asf.gov.az  (mail.gov.az-da başqa qurumların işçiləri girə bilməsin;
                     «ad.soyad» yazılsa, @asf.gov.az əlavə olunur). Vergüllə bir neçə domen olar.
   WA_IMAP_CA      - (istəyə bağlı) poçt serverinin sertifikatını imzalayan CA faylı
+  WA_IMAP_SERT_ADI - sertifikatın üzərindəki ad host adından fərqlidirsə (mail.gov.az: sertifikat «*.mail.gov.az»-dır,
+                    bu isə «mail.gov.az»-ın özünü əhatə etmir). Zəncir və vaxt adi qaydada yoxlanır, ad isə bununla
+                    tutuşdurulur. Sertifikat yenilənəndə də işləyir (WA_IMAP_PIN-dən fərqli olaraq).
   WA_IMAP_PIN     - (müvəqqəti) poçt serverinin sertifikatının SHA-256 barmaq izi. Server sertifikatı vaxtı keçmiş və ya
                     başqa ada verilmiş olanda (mail.gov.az-da 2026-10: CN=cg.gov.az, 06.10.2026-da bitib) adi yoxlama
                     keçmir. Yoxlamanı söndürmək əvəzinə məhz bu sertifikata «sancılır»: başqa sertifikat (ortadakı
@@ -65,7 +68,11 @@ IMAP_HOST = _env("WA_IMAP_HOST")
 IMAP_PORT = int(_env("WA_IMAP_PORT", "993") or 993)
 IMAP_DOMENLER = [d.strip().lower() for d in _env("WA_IMAP_DOMEN").split(",") if d.strip()]
 IMAP_CA = _env("WA_IMAP_CA")
-IMAP_PIN = re.sub(r"[^0-9a-f]", "", _env("WA_IMAP_PIN").lower().replace("sha256 fingerprint=", ""))
+IMAP_SERT_ADI = _env("WA_IMAP_SERT_ADI").lower()
+# bir neçə barmaq izi vergüllə (poçt serveri bir neçə node-dan ibarətdirsə, hər birinin sertifikatı fərqli ola bilər)
+IMAP_PINLER = {p for p in (re.sub(r"[^0-9a-f]", "", x.lower().replace("sha256 fingerprint=", ""))
+                           for x in _env("WA_IMAP_PIN").split(",")) if p}
+IMAP_PIN = bool(IMAP_PINLER)
 SESSIYA_SAAT = float(_env("WA_SESSIYA_SAAT", "8") or 8)
 ACAR = (_secret("/run/secrets/wa_sessiya_acari", "WA_SESSIYA_ACARI") or secrets.token_hex(32)).encode()
 
@@ -120,6 +127,8 @@ def imap_yoxla(login, parol):
     if IMAP_PIN:  # sertifikat zənciri yox, konkret sertifikatın barmaq izi yoxlanır (aşağıda)
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
+    elif IMAP_SERT_ADI:  # zəncir və vaxt yoxlanır (CERT_REQUIRED qalır), ad isə aşağıda WA_IMAP_SERT_ADI ilə
+        ctx.check_hostname = False
     try:
         m = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT, ssl_context=ctx, timeout=10)
     except ssl.SSLCertVerificationError as x:
@@ -127,15 +136,31 @@ def imap_yoxla(login, parol):
                           f"Administrator: WA_IMAP_PIN-ə bax (assistant/giris.py).")
     except (OSError, ssl.SSLError, socket.timeout) as x:
         raise GirisXetasi(f"Poçt serverinə ({IMAP_HOST}) qoşulmaq alınmadı ({type(x).__name__})")
+    if IMAP_SERT_ADI and not IMAP_PIN:
+        sert = m.sock.getpeercert() or {}
+        adlar = {v.lower() for k, v in sert.get("subjectAltName", ()) if k == "DNS"} | \
+                {v.lower() for rdn in sert.get("subject", ()) for k, v in rdn if k == "commonName"}
+        if IMAP_SERT_ADI not in adlar:
+            try:
+                m.shutdown()
+            except Exception:
+                pass
+            print(f"[giriş] {IMAP_HOST} sertifikatının adları: {sorted(adlar)} — WA_IMAP_SERT_ADI={IMAP_SERT_ADI} deyil", flush=True)
+            raise GirisXetasi(f"Poçt serverinin ({IMAP_HOST}) sertifikatı gözlənilən ada verilməyib. Parol göndərilmədi.")
     if IMAP_PIN:
         der = m.sock.getpeercert(binary_form=True) or b""
-        if hashlib.sha256(der).hexdigest() != IMAP_PIN:  # parol göndərilmədən dayanırıq
+        alinan = hashlib.sha256(der).hexdigest()
+        if alinan not in IMAP_PINLER:  # parol göndərilmədən dayanırıq
+            sehv = [p for p in IMAP_PINLER if len(p) != 64]
+            print(f"[giriş] {IMAP_HOST} sertifikatının barmaq izi: {':'.join(alinan[i:i + 2] for i in range(0, 64, 2)).upper()} — "
+                  f"WA_IMAP_PIN-dəki ilə uyğun gəlmir" + (f" (WA_IMAP_PIN düzgün deyil: 64 hex simvol olmalıdır, "
+                                                          f"oxunan: {sehv})" if sehv else ""), flush=True)
             try:
                 m.shutdown()
             except Exception:
                 pass
             raise GirisXetasi(f"Poçt serverinin ({IMAP_HOST}) sertifikatı dəyişib və gözlənilən deyil. Parol göndərilmədi. "
-                              f"Administrator: sertifikatı yoxlayıb WA_IMAP_PIN-i yeniləsin (və ya XDMX sertifikatı yeniləyibsə, silsin).")
+                              f"Administrator: alınan barmaq izi server log-undadır — yoxlayıb WA_IMAP_PIN-i yeniləsin.")
     try:
         m.login(adres, parol)
     except imaplib.IMAP4.error:
