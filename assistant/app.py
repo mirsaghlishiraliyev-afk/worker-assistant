@@ -15,6 +15,7 @@ from . import __version__, llm
 from . import giris as G
 from . import sohbet as SB
 from . import tarixce as TR
+from . import kitabxana as KB
 from . import teklif as TK
 from .modullar import bank as BANK
 from . import tools as T
@@ -188,26 +189,16 @@ ISLER = {}  # yükləmə işləri: böyük fayllar arxa planda çevrilir
 KILID = threading.Lock()
 
 
-@app.post("/api/yukle")
-async def yukle(fayl: list[UploadFile] = File(...), dovr_sonu: str = Form("")):
-    """Bir və ya bir neçə Excel: bank çıxarışı (və ya istənilən Excel) + istəyə görə inteqrasiya şablonu."""
-    if len(fayl) > 5:
-        raise HTTPException(400, "Bir dəfəyə ən çox 5 fayl yükləyin")
-    yollar = []
-    for f in fayl:
-        if not f.filename.lower().endswith((".xlsx", ".xlsm")):
-            raise HTTPException(400, f"«{f.filename}»: yalnız Excel faylı (.xlsx) qəbul olunur")
-        ad = re.sub(r"[^\w.\-]", "_", pathlib.Path(f.filename).name)
-        yol = YUKLEMELER / f"{dt.datetime.now():%Y%m%d_%H%M%S}_{uuid.uuid4().hex[:4]}_{ad}"
-        with open(yol, "wb") as h:
-            while blok := await f.read(1 << 20):
-                h.write(blok)
-        yollar.append((yol, pathlib.Path(f.filename).name))
+def _dovr(dovr_sonu):
     try:
         # verilməyibsə: keçən ayın son günü (uzlaşma faylıdırsa, istifadəçi sonra dəyişə bilər)
-        dovr = dt.date.fromisoformat(dovr_sonu) if dovr_sonu else dt.date.today().replace(day=1) - dt.timedelta(days=1)
+        return dt.date.fromisoformat(dovr_sonu) if dovr_sonu else dt.date.today().replace(day=1) - dt.timedelta(days=1)
     except ValueError:
         raise HTTPException(400, "Dövrün sonu düzgün tarix deyil")
+
+
+def _is_baslat(yollar, dovr, rejim="", kitabxanaya=True):
+    """Faylları arxa planda oxuyur (yeni yüklənən və ya «Fayllarım»dan açılan). yollar: [(yol, orijinal ad)]."""
     is_id = uuid.uuid4().hex[:10]
     login = _CARI.get()  # arxa plan axınında istifadəçi kontekstdən gəlmir: əvvəlcədən götürülür
     ISLER[is_id] = {"status": "isleyir", "i": 0, "n": 0, "vereq": "", "_sahib": login}
@@ -221,14 +212,15 @@ async def yukle(fayl: list[UploadFile] = File(...), dovr_sonu: str = Form("")):
             with KILID:
                 sablonlar = [(y, a) for y, a in yollar if BANK.sablon_mi(y)]
                 esas = [(y, a) for y, a in yollar if (y, a) not in sablonlar]
+                if kitabxanaya:  # «Fayllarım»: kim nəyi yükləyib — yadda qalır
+                    sablonlar = [(pathlib.Path(KB.elave(login, a, y, "sablon", rejim)[1]), a) for y, a in sablonlar]
+                    esas = [(pathlib.Path(KB.elave(login, a, y, "fayl", rejim)[1]), a) for y, a in esas]
                 if sablonlar:  # inteqrasiya şablonu: yadda saxlanır, 1C faylı onun üzərində doldurulur
                     S.sablon = {"yol": sablonlar[0][0], "ad": sablonlar[0][1]}
                 if esas:
                     sablon = S.sablon
                     S.yukle(esas[0][0], dovr, orijinal_ad=esas[0][1], progress=progress)
                     S.sablon = sablon
-                elif not S.fayl_var:
-                    pass  # yalnız şablon yüklənib: bank çıxarışı gözlənilir
                 S.teklifler = TK.hazirla(S)  # fayla görə hazır sorğular
             ISLER[is_id].update(status="hazir", netice={**veziyyet(), "yalniz_sablon": not esas,
                                                          "fayllar": [a for _, a in yollar]})
@@ -237,6 +229,56 @@ async def yukle(fayl: list[UploadFile] = File(...), dovr_sonu: str = Form("")):
 
     threading.Thread(target=isci, daemon=True).start()
     return {"is": is_id}
+
+
+@app.post("/api/yukle")
+async def yukle(fayl: list[UploadFile] = File(...), dovr_sonu: str = Form(""), rejim: str = Form("")):
+    """Bir və ya bir neçə Excel: bank çıxarışı (və ya istənilən Excel) + istəyə görə inteqrasiya şablonu.
+    rejim="uzerine": eyni adlı köhnə faylın üstünə yazılır; əks halda ayrıca saxlanır."""
+    if len(fayl) > 5:
+        raise HTTPException(400, "Bir dəfəyə ən çox 5 fayl yükləyin")
+    yollar = []
+    for f in fayl:
+        if not f.filename.lower().endswith((".xlsx", ".xlsm")):
+            raise HTTPException(400, f"«{f.filename}»: yalnız Excel faylı (.xlsx) qəbul olunur")
+        ad = re.sub(r"[^\w.\-]", "_", pathlib.Path(f.filename).name)
+        yol = YUKLEMELER / f"{dt.datetime.now():%Y%m%d_%H%M%S}_{uuid.uuid4().hex[:4]}_{ad}"
+        with open(yol, "wb") as h:
+            while blok := await f.read(1 << 20):
+                h.write(blok)
+        yollar.append((yol, pathlib.Path(f.filename).name))
+    return _is_baslat(yollar, _dovr(dovr_sonu), rejim=rejim)
+
+
+# ---------------- «Fayllarım»: istifadəçinin yüklədiyi fayllar ----------------
+class Yoxla(BaseModel):
+    fayllar: list = []
+
+
+@app.get("/api/fayllar")
+def fayllarim():
+    return KB.siyahi(_CARI.get())
+
+
+@app.post("/api/fayllar/yoxla")
+def fayllari_yoxla(y: Yoxla):
+    """Yükləmədən əvvəl: bu adda fayl artıq yüklənibmi (interfeys «üstünə yazım?» soruşur)."""
+    return KB.yoxla(_CARI.get(), y.fayllar)
+
+
+@app.post("/api/fayllar/{fid}/ac")
+def fayli_ac(fid: str, dovr_sonu: str = ""):
+    e = KB.al(_CARI.get(), fid)
+    if not e or not pathlib.Path(e["yol"]).exists():
+        raise HTTPException(404, "Fayl tapılmadı (silinib ola bilər) — yenidən yükləyin")
+    return _is_baslat([(pathlib.Path(e["yol"]), e["ad"])], _dovr(dovr_sonu), kitabxanaya=False)
+
+
+@app.delete("/api/fayllar/{fid}")
+def fayli_sil(fid: str):
+    if not KB.sil(_CARI.get(), fid):
+        raise HTTPException(404, "Fayl tapılmadı")
+    return {"ok": True}
 
 
 @app.get("/api/yukle/{is_id}")

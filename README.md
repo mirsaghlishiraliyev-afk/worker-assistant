@@ -169,6 +169,7 @@ Fayllar: `Dockerfile`, `.dockerignore`, `deploy/docker-compose.worker-assistant.
 - 10 dəqiqədə 5 uğursuz cəhddən sonra həmin ünvan 10 dəqiqə bloklanır (poçt hesabının XDMX tərəfindən bloklanmasının qarşısını da alır).
 - Hər istifadəçinin öz sessiyası var: başqasının yüklədiyi faylı, söhbətini və hesabatını görmür.
 - Sistem istifadəçini tanıyır (adla salamlaşır, «Mən kiməm?»). Söhbət tarixçəsi serverdə, hər istifadəçinin öz faylındadır (`/asis/worker-assistant/sohbetler/`, ən çox 100 söhbət) — istənilən kompüterdən açılır.
+- «Fayllarım»: hər istifadəçinin yüklədiyi fayllar yadda qalır (`/asis/worker-assistant/fayllar/`, ən çox 200); siyahıdan seçib yenidən yükləmədən açmaq olar. Eyni adlı fayl yenidən yüklənəndə sistem soruşur: saxlanmışı açım / üstünə yazım / ayrıca saxlayım. Eyni məzmun təkrar saxlanmır.
 - `WA_HOST=0.0.0.0` olanda giriş (`WA_IMAP_HOST`) mütləqdir, yoxsa server işə düşmür. Lokal (127.0.0.1) işlədəndə giriş tələb olunmur.
 - Şirkətin öz Active Directory-si olsa, IMAP əvəzinə `WA_LDAP_*` ilə də işləyir (bax: `assistant/giris.py`).
 

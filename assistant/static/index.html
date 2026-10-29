@@ -204,6 +204,14 @@ main.bos .hazirlar{display:none!important}  /* boş ekranda sorğular aşağıda
 .sual-v .sv.esas{border-color:var(--green);color:var(--green)}
 .sual-v .sv.ikinci{color:var(--muted,#888)}
 .sual-v.cavablandi .sv{opacity:.35;pointer-events:none}
+#fayllarim .fl{display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:2px;cursor:pointer;font-size:13px;color:var(--text,#e8e8ea)}
+#fayllarim .fl:hover{background:#121214}
+#fayllarim .fl.aktiv{background:#160404;box-shadow:inset 2px 0 0 var(--red)}
+#fayllarim .fl .ad{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#fayllarim .fl .vx{font:10.5px var(--mono);color:var(--dim,#666)}
+#fayllarim .fl .sil{visibility:hidden;background:none;border:0;color:var(--dim,#666);cursor:pointer}
+#fayllarim .fl:hover .sil{visibility:visible}
+#fayllarim .bos-q{font-size:12px;color:var(--dim,#666);padding:4px 10px}
 .elave .deyis{margin-left:auto;background:#000;border:1px solid #3a1414;color:var(--red, #ff3b3b);border-radius:2px;padding:5px 10px;font:12px var(--mono);cursor:pointer}
 .elave .deyis:hover{border-color:#ff3b3b;box-shadow:0 0 8px rgba(255,40,40,.4)}
 .elave.isleyir .deyis{display:none}
@@ -253,6 +261,8 @@ main.bos .hazirlar{display:none!important}  /* boş ekranda sorğular aşağıda
     </svg></div>Yeni söhbət</button>
     <div class="bolme">Modullar</div>
     <div id="modullar"></div>
+    <div class="bolme">Fayllarım</div>
+    <div id="fayllarim"></div>
     <div class="bolme">Söhbətlər</div>
     <div id="tarixce"></div>
     <div class="side-alt" id="sideAlt">Fayl yüklənməyib</div>
@@ -394,7 +404,7 @@ function sideAlt(r){
   $("#faylBas").textContent = ad + (r.uzlasma ? " · " + r.dovr_sonu.split("-").reverse().join(".") : "");
 }
 // Server versiyası: kod yenilənib, server köhnə qalıbsa, bu yazı köhnə versiyanı göstərir
-const UI_VERSIYA = "1.2.1";
+const UI_VERSIYA = "1.3.0";
 function versiyaCiz(r){
   let el = $("#versiya");
   if(!el){ el = document.createElement("div"); el.id = "versiya"; el.style.cssText = "font:10.5px var(--mono);color:var(--dim);padding:6px 8px 0"; $("#yan").appendChild(el); }
@@ -595,11 +605,73 @@ function xetaMetni(j, status){
 async function xetaOxu(r){ let j = null; try { j = await r.json(); } catch {} return xetaMetni(j, r.status); }
 let BASLIQ = "Bu gün hansı işi həll edək?";
 const basliq = t => { $("#bos h1").textContent = t; };
+// ---------- «Fayllarım»: yüklənmiş fayllar yadda qalır ----------
+let fayllar = [], aktivFayl = null;
+const vaxtF = v => { const d = new Date(v * 1000), z = n => String(n).padStart(2, "0");
+  return `${z(d.getDate())}.${z(d.getMonth() + 1)}.${d.getFullYear()} ${z(d.getHours())}:${z(d.getMinutes())}`; };
+async function fayllariYukle(){
+  try { fayllar = await fetch("/api/fayllar").then(r => r.ok ? r.json() : []); } catch { fayllar = []; }
+  $("#fayllarim").innerHTML = fayllar.length ? fayllar.slice(0, 30).map(f =>
+    `<div class="fl ${f.id === aktivFayl ? "aktiv" : ""}" data-fid="${esc(f.id)}" title="${esc(f.ad)} — açmaq üçün basın">
+      <span>${f.nov === "sablon" ? "📋" : "📊"}</span><span class="ad">${esc(f.ad)}</span><span class="vx">${esc(vaxtF(f.vaxt))}</span>
+      <button class="sil" data-fsil="${esc(f.id)}" title="Sil">✕</button></div>`).join("")
+    : `<div class="bos-q">Hələ fayl yükləməmisiniz</div>`;
+}
+$("#fayllarim").addEventListener("click", async e => {
+  const s = e.target.closest("[data-fsil]");
+  if(s){
+    const f = fayllar.find(x => x.id === s.dataset.fsil);
+    if(!confirm(`«${f?.ad}» faylı serverdən silinsin?`)) return;
+    await fetch(`/api/fayllar/${s.dataset.fsil}`, {method:"DELETE"}); fayllariYukle(); return;
+  }
+  const el = e.target.closest("[data-fid]"); if(!el || mesgul) return;
+  const f = fayllar.find(x => x.id === el.dataset.fid); if(f) faylAc(f);
+});
+async function faylAc(f){
+  secilmisFayl = {name: f.ad, size: f.olcu}; secilmisFayllar = [{name: f.ad, size: f.olcu}];
+  basliq("Fayl açılır…");
+  $("#elave").classList.add("var", "isleyir"); $("#eAd").textContent = f.ad; $("#eSt").textContent = "Saxlanmış fayl açılır…";
+  const r = await fetch(`/api/fayllar/${f.id}/ac` + ($("#dovr").value ? `?dovr_sonu=${$("#dovr").value}` : ""), {method:"POST"});
+  if(!r.ok){ $("#eSt").textContent = await xetaOxu(r); $("#elave").classList.remove("isleyir"); basliq(BASLIQ); fayllariYukle(); return; }
+  aktivFayl = f.id; await isiIzle((await r.json()).is);
+}
+
+// Söhbətdə düymələrlə sual (cavab gözlənilir)
+function sorus(metn, variantlar){
+  $("#main").classList.remove("bos");
+  return new Promise(res => {
+    const qab = aiQab(); const ic = qab.querySelector(".icerik");
+    ic.innerHTML = `<div class="metn"></div><div class="sual-v">${variantlar.map(v =>
+      `<button type="button" class="sv ${v.esas ? "esas" : ""} ${v.ikinci ? "ikinci" : ""}" data-sec="${esc(v.acar)}">${esc(v.etiket)}</button>`).join("")}</div>`;
+    ic.querySelector(".metn").innerHTML = md(metn);
+    ic.querySelectorAll("[data-sec]").forEach(b => b.onclick = () => { ic.querySelector(".sual-v").classList.add("cavablandi"); res(b.dataset.sec); });
+  });
+}
+
 async function yukle(){
+  // əvvəl yüklənibmi? — eyni adlı fayl varsa soruş (böyük faylı boş yerə göndərməmək üçün göndərmədən əvvəl)
+  let rejim = "";
+  try {
+    const kon = await fetch("/api/fayllar/yoxla", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({fayllar: secilmisFayllar.map(f => ({ad: f.name, olcu: f.size}))})}).then(r => r.ok ? r.json() : []);
+    if(kon.length){
+      const hamisiEyni = kon.length === secilmisFayllar.length && kon.every(k => k.eyni_olcu);
+      const siyahi = kon.map(k => `«${k.ad}» (${vaxtF(k.vaxt)}${k.eyni_olcu ? ", eyni ölçü" : ""})`).join(", ");
+      const sec = await sorus(`Bu faylı artıq yükləmisiniz: ${siyahi}. ` +
+        (hamisiEyni ? "Görünür, dəyişməyib — saxlanmışı açım, yoxsa yenisinin üstünə yazım?" : "Yenisini köhnənin üstünə yazım?"), [
+        ...(hamisiEyni ? [{acar: "ac", etiket: "Saxlanmışı aç", esas: true}] : []),
+        {acar: "uzerine", etiket: "Üstünə yaz", esas: !hamisiEyni},
+        {acar: "yeni", etiket: "Ayrıca saxla"},
+        {acar: "legv", etiket: "Ləğv et", ikinci: true}]);
+      if(sec === "legv") return;
+      if(sec === "ac"){ const f = fayllar.find(x => x.id === kon[0].id) || {id: kon[0].id, ad: kon[0].ad, olcu: kon[0].olcu}; return faylAc(f); }
+      rejim = sec;
+    }
+  } catch {}
   basliq("Fayl oxunur…");
   $("#elave").classList.add("var"); $("#eAd").textContent = secilmisFayl.name;
   $("#eSt").textContent = `Göndərilir… (${(secilmisFayl.size / 1048576).toFixed(1)} MB)`;
-  const fd = new FormData(); secilmisFayllar.forEach(f => fd.append("fayl", f));
+  const fd = new FormData(); secilmisFayllar.forEach(f => fd.append("fayl", f)); fd.append("rejim", rejim);
   $("#elave").classList.add("isleyir");
   const cavab0 = await new Promise(res => {
     const x = new XMLHttpRequest();
@@ -611,7 +683,11 @@ async function yukle(){
     x.send(fd);
   });
   if(!cavab0.ok){ $("#eSt").textContent = xetaMetni(cavab0.j, cavab0.status); $("#elave").classList.remove("isleyir"); basliq(BASLIQ); return; }
-  const {is} = cavab0.j;
+  aktivFayl = null;
+  await isiIzle(cavab0.j.is);
+}
+
+async function isiIzle(is){
   // Böyük fayllar arxa planda çevrilir: vəziyyəti izləyirik
   let j;
   while(true){
@@ -622,6 +698,7 @@ async function yukle(){
     $("#eSt").textContent = st.n ? `Oxunur: ${st.i}/${st.n} vərəq · ${st.vereq}` : "Oxunur və təhlil edilir…";
     basliq(st.n ? `Fayl oxunur… ${st.i}/${st.n} vərəq` : "Fayl oxunur…");
   }
+  fayllariYukle();
   sideAlt(j); hazirlarCiz(j.teklifler, j.fayl);
   // Dövrün sonu yalnız uzlaşma faylı üçün lazımdır
   $("#dovrQab").style.display = j.uzlasma ? "" : "none";
@@ -706,7 +783,7 @@ $("#sohbet").addEventListener("input", e => {
 });
 
 tarixceCiz();
-veziyyet().then(sohbetleriYukle);
+veziyyet().then(() => { sohbetleriYukle(); fayllariYukle(); });
 yeniləDuyme();
 </script>
 </body>

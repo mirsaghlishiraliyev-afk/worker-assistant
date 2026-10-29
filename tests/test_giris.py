@@ -283,3 +283,56 @@ def test_ad_soyad_e_poctdan():
         c = SB.cavab(s, sual)
         assert c and "**Mirsaghli**" in c and "**Shiraliyev**" in c and "mirsaghli.shiraliyev@asf.gov.az" in c, sual
     assert SB.cavab(s, "Kür Avto-nun adı ilə borcu nə qədərdir?") is None   # iş sualı şablona düşmür
+
+
+def _yukle_gozle(c, fayllar, rejim=""):
+    files = [("fayl", (ad, open(yol, "rb"))) for yol, ad in fayllar]
+    j = c.post("/api/yukle", files=files, data={"rejim": rejim}).json()
+    for _ in range(100):
+        st = c.get(f"/api/yukle/{j['is']}").json()
+        if st["status"] != "isleyir":
+            return st
+        time.sleep(0.1)
+
+
+def test_fayllarim_yadda_qalir_ve_secilir():
+    _qur()
+    a, b = TestClient(app), TestClient(app)
+    _gir(a, "aynur", "Parol1")
+    _gir(b, "resad", "Parol2")
+    st = _yukle_gozle(a, [(DATA / "bank_kapital_test.xlsx", "Oktyabr çıxarışı.xlsx")])
+    assert st["status"] == "hazir"
+    fl = a.get("/api/fayllar").json()
+    assert [f["ad"] for f in fl] == ["Oktyabr çıxarışı.xlsx"]
+    assert b.get("/api/fayllar").json() == []                          # Rəşad Aynurun fayllarını görmür
+    assert b.post(f"/api/fayllar/{fl[0]['id']}/ac").status_code == 404
+    # başqa faylla işləyib sonra siyahıdan geri açmaq — yenidən yükləmədən
+    _yukle_gozle(a, [(DATA / "ixtiyari_excel.xlsx", "satislar.xlsx")])
+    assert a.get("/api/veziyyet").json()["bank"] is None
+    j = a.post(f"/api/fayllar/{fl[0]['id']}/ac").json()
+    for _ in range(100):
+        st = a.get(f"/api/yukle/{j['is']}").json()
+        if st["status"] != "isleyir":
+            break
+        time.sleep(0.1)
+    assert st["netice"]["bank"]["daxilolma"] == 9 and len(a.get("/api/fayllar").json()) == 2
+
+
+def test_tekrar_yukleme_ve_ustune_yazma():
+    _qur()
+    a = TestClient(app)
+    _gir(a, "aynur", "Parol1")
+    yol = DATA / "bank_kapital_test.xlsx"
+    _yukle_gozle(a, [(yol, "cixaris.xlsx")])
+    k = a.post("/api/fayllar/yoxla", json={"fayllar": [{"ad": "Cixaris.xlsx", "olcu": yol.stat().st_size}]}).json()
+    assert len(k) == 1 and k[0]["eyni_olcu"] is True                     # interfeys «saxlanmışı açım?» soruşur
+    assert a.post("/api/fayllar/yoxla", json={"fayllar": [{"ad": "basqa.xlsx", "olcu": 1}]}).json() == []
+    _yukle_gozle(a, [(yol, "cixaris.xlsx")])                               # eyni məzmun: təkrar saxlanmır
+    assert len([f for f in a.get("/api/fayllar").json() if f["ad"] == "cixaris.xlsx"]) == 1
+    _yukle_gozle(a, [(DATA / "bank_cixarisi_test.xlsx", "cixaris.xlsx")], rejim="uzerine")   # fərqli məzmun, üstünə
+    ss = [f for f in a.get("/api/fayllar").json() if f["ad"] == "cixaris.xlsx"]
+    assert len(ss) == 1 and ss[0]["olcu"] == (DATA / "bank_cixarisi_test.xlsx").stat().st_size
+    _yukle_gozle(a, [(yol, "cixaris.xlsx")], rejim="yeni")                  # ayrıca saxla
+    assert len([f for f in a.get("/api/fayllar").json() if f["ad"] == "cixaris.xlsx"]) == 2
+    fid = a.get("/api/fayllar").json()[0]["id"]
+    assert a.delete(f"/api/fayllar/{fid}").status_code == 200
