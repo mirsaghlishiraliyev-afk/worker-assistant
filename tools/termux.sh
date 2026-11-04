@@ -21,6 +21,8 @@ if ! python -c "import pandas, openpyxl, fastapi, uvicorn, multipart, ldap3" 2>/
     pkg install -y python-numpy python-pandas 2>/dev/null || { pkg install -y tur-repo && pkg install -y python-numpy python-pandas; }
     # fastapi-nin pydantic-core hissəsi Rust tələb edə bilər
     pkg install -y python-pydantic-core 2>/dev/null || pkg install -y rust binutils
+    # pydantic-core mənbədən qurulanda maturin Android API səviyyəsini tələb edir
+    export ANDROID_API_LEVEL="${ANDROID_API_LEVEL:-$(getprop ro.build.version.sdk)}"
     pip install openpyxl fastapi uvicorn python-multipart ldap3 httpx
 fi
 
