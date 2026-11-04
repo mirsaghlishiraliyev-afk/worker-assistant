@@ -22,6 +22,14 @@ def _madde_deyilib():  # mühasib bütün kateqoriyaların maddəsini deyib
     B._qaydalar_yaz({**B._qaydalar(), "madde": {k["kod"]: k["teklif"] for k in B.KATEQORIYALAR}})
 
 
+def _hazirla(s, **kw):  # 1C faylı: sığorta maddəsi hər dəfə soruşulur — ilk təkliflə cavab verilir
+    n = B.bank_hesabat(s, **kw)
+    while n["ui"]["tip"] == "sual":
+        kod = s.bank["madde_gozle"]["kod"]
+        n = B.bank_madde(s, kod, B._teklifler(kod)[0])
+    return n
+
+
 def _kat(s, setir):
     return next(r for r in s.bank["setirler"] if r["setir"] == setir)["kateqoriya"]
 
@@ -71,7 +79,7 @@ def test_1c_fayli():
     import openpyxl
     s = S("hesabat.json")
     _madde_deyilib()
-    n = B.bank_hesabat(s)
+    n = _hazirla(s)
     wb = openpyxl.load_workbook(QOV / n["ui"]["fayllar"][1]["ad"])   # yoxlama faylı
     ws = wb["1C - Sığorta haqları"]
     assert [c.value for c in ws[1]][:len(B.SUTUNLAR_1C)] == B.SUTUNLAR_1C
@@ -127,7 +135,7 @@ def test_1c_inteqrasiya_sablonu():
     class K:
         bank = B.oxu(KAPITAL)
     _madde_deyilib()
-    n = B.bank_hesabat(K())
+    n = _hazirla(K())
     f1c = n["ui"]["fayllar"][0]["ad"]
     wb = openpyxl.load_workbook(QOV / f1c)
     assert wb.sheetnames == ["Sheet1"]
@@ -147,7 +155,7 @@ def test_muqavilesizler_istege_gore():
     plan = B.qayda(K(), "Müqaviləsizləri də şablona sal")
     assert plan == ("bank_hesabat", {"muqavilesiz": True})
     _madde_deyilib()
-    n = B.bank_hesabat(K(), **plan[1])
+    n = _hazirla(K(), **plan[1])
     rows = list(openpyxl.load_workbook(QOV / n["ui"]["fayllar"][0]["ad"])["Sheet1"].iter_rows(values_only=True))
     assert len(rows) == 3                                       # HS- nömrəli + müqaviləsiz sığorta haqqı
     assert {r[2] for r in rows[1:]} == {"HS-2026000001-QS", None}
@@ -196,8 +204,8 @@ def test_mushasibin_sablonunu_doldurur():
         bank = B.oxu(KAPITAL)
         sablon = {"yol": yol, "ad": yol.name}
     _madde_deyilib()
-    n = B.bank_hesabat(K())
-    assert n["metn"].startswith("«Sığorta haqqı inteqrasiya faylı.xlsx» şablonunuz dolduruldu: 1 yeni sətir")
+    n = _hazirla(K())
+    assert "«Sığorta haqqı inteqrasiya faylı.xlsx» şablonunuz dolduruldu: 1 yeni sətir" in n["metn"]
     rows = list(openpyxl.load_workbook(QOV / n["ui"]["fayllar"][0]["ad"])["Sheet1"].iter_rows(values_only=True))
     assert len(rows) == 3 and rows[1][2] == "HS-2026000000-QS" and rows[2][2] == "HS-2026000001-QS"   # köhnə sətir qalır
 
@@ -205,22 +213,26 @@ def test_mushasibin_sablonunu_doldurur():
 def test_madde_muhasibden_sorusulur():
     import openpyxl
     B.QAYDA_FAYLI, B.HESABAT_QOVLUGU = QOV / "madde.json", QOV
+    _madde_deyilib()                                                                # digər kateqoriyalar artıq deyilib
 
     class K:
         bank = B.oxu(KAPITAL)
     k = K()
-    n = B.bank_hesabat(k)
+    n = B.bank_hesabat(k, muqavilesiz=True)
     assert "Pul vəsaitinin maddəsi" in n["metn"] and n["ui"]["tip"] == "sual"     # fayl hazırlanmır, soruşur
-    plan = B.qayda(k, "Sığorta haqqı daxilolmaları")                               # mühasib 1C-dəki adı yazır
+    assert "bütün 2 sətrinə" in n["metn"]
+    etiketler = [v["etiket"] for v in n["ui"]["variantlar"]]
+    assert len(etiketler) >= 3 and etiketler[-1] == "Ləğv et"                       # bir neçə təklif
+    plan = B.qayda(k, "Sığorta haqqı daxilolmaları")                               # mühasib öz adını əl ilə yazır
     assert plan == ("bank_madde", {"kateqoriya": "sigorta_haqqi", "madde": "Sığorta haqqı daxilolmaları"})
     n = B.bank_madde(k, **plan[1])
-    assert n["ui"]["tip"] == "sual" and k.bank["madde_gozle"]["kod"] != "sigorta_haqqi"   # növbəti kateqoriyanı soruşur
-    while n["ui"]["tip"] == "sual":                                                 # qalanlara təklif olunan variantla cavab
-        n = B.bank_madde(k, k.bank["madde_gozle"]["kod"], B._kat(k.bank["madde_gozle"]["kod"])["teklif"])
-    assert "fayllar" in n["ui"]                                                     # son cavabdan sonra fayl dərhal hazırlanır
+    assert "fayllar" in n["ui"]                                                     # cavabdan sonra fayl dərhal hazırlanır
     rows = list(openpyxl.load_workbook(QOV / n["ui"]["fayllar"][0]["ad"])["Sheet1"].iter_rows(values_only=True))
-    assert rows[1][5] == "Sığorta haqqı daxilolmaları" and rows[1][3] == "AZ00TEST0000000000000000000"
-    assert "fayllar" in B.bank_hesabat(k)["ui"]                                     # ikinci dəfə soruşmur
+    assert len(rows) == 3 and all(r[5] == "Sığorta haqqı daxilolmaları" for r in rows[1:])   # bütün sətirlərə
+    assert rows[1][3] == "AZ00TEST0000000000000000000"
+    n = B.bank_hesabat(k)                                                           # növbəti doldurmada yenə soruşur
+    assert n["ui"]["tip"] == "sual"
+    assert n["ui"]["variantlar"][0]["etiket"] == "«Sığorta haqqı daxilolmaları» (son dəfə)"   # əvvəlki seçim ilk təklifdir
 
 
 def test_her_kateqoriyanin_maddesi_sorusulur():
@@ -245,9 +257,13 @@ def test_her_kateqoriyanin_maddesi_sorusulur():
     assert wb["Təlim haqları"]["G2"].value == "1C telim"
     assert wb["Depozit faizləri"]["G2"].value is None                               # mühasib boş saxladı
     assert B._madde("faiz") == ""                                                   # boş saxlamaq yadda qalmır
-    assert "fayllar" in B.bank_hesabat(k)["ui"]                                     # eyni çıxarışda yenidən soruşmur
+    n = B.bank_hesabat(k)                                                           # sığortanı yenə soruşur, digərlərini yox
+    assert n["ui"]["tip"] == "sual" and k.bank["madde_gozle"]["kod"] == "sigorta_haqqi"
+    assert "fayllar" in B.bank_madde(k, "sigorta_haqqi", "1C sigorta_haqqi")["ui"]
     yeni = type("Y", (), {"bank": B.oxu(KAPITAL)})()
     n = B.bank_hesabat(yeni)                                                        # yeni çıxarışda faizi yenə soruşur
+    while yeni.bank.get("madde_gozle", {}).get("kod") == "sigorta_haqqi":
+        n = B.bank_madde(yeni, "sigorta_haqqi", "1C sigorta_haqqi")
     assert n["ui"]["tip"] == "sual" and yeni.bank["madde_gozle"]["kod"] == "faiz"
 
 

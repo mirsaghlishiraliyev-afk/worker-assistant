@@ -115,6 +115,8 @@ def test_her_istifadecinin_oz_sessiyasi():
     assert b.get("/api/veziyyet").json()["hazir"] is False             # Rəşad Aynurun faylını görmür
     B._qaydalar_yaz({**B._qaydalar(), "madde": {k["kod"]: k["teklif"] for k in B.KATEQORIYALAR}})   # mühasib maddələri deyib
     r = a.post("/api/sohbet", json={"mesaj": "1C üçün Excel hazırla"}).json()
+    assert r["hadiseler"][0]["ui"]["tip"] == "sual"                       # maddə hər doldurmada soruşulur
+    r = a.post("/api/sohbet", json={"mesaj": "Sığorta haqları maddəsi \"Sığorta haqları\" olsun"}).json()
     url = r["hadiseler"][0]["ui"]["fayllar"][0]["url"]
     assert a.get(url).status_code == 200
     assert b.get(url).status_code == 404                                 # başqasının hesabatını yükləyə bilmir
