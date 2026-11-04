@@ -24,32 +24,33 @@ from uzlasma.config import az
 from .excel import _reqem, norm
 
 # ======================= ayarlar =======================
-# Pul vəsaitinin maddələri 1C-dəki adlarla eyni olmalıdır: mühasib çatda dəyişə bilər
-# («subroqasiya maddəsi "..." olsun»), dəyişiklik data/bank_qaydalari.json-da saxlanır.
+# Pul vəsaitinin maddəsi 1C-dəki adla hərfi-hərfinə eyni olmalıdır, ona görə sistem onu UYDURMUR:
+# 1C faylı hazırlananda hər kateqoriya üçün mühasibdən soruşur və data/bank_qaydalari.json-da saxlayır.
+# «teklif» yalnız sual düyməsindəki variantdır. Mühasib sonra da dəyişə bilər («subroqasiya maddəsi "..." olsun»).
 KATEQORIYALAR = [
-    {"kod": "sigorta_haqqi", "ad": "Sığorta haqları", "madde": "Sığorta haqları", "emal": "1C-yə Excel ilə",
+    {"kod": "sigorta_haqqi", "ad": "Sığorta haqları", "teklif": "Sığorta haqları", "emal": "1C-yə Excel ilə",
      "acar": [r"sigort", r"sgort", r"sigorta haq", r"\bpolis", r"heyvan", r"\bekin", r"bitki", r"страхов", r"premium", r"\bsh\b"]},
-    {"kod": "subroqasiya", "ad": "Subroqasiya", "madde": "Subroqasiya üzrə daxilolmalar", "emal": "1C-yə əl ilə",
+    {"kod": "subroqasiya", "ad": "Subroqasiya", "teklif": "Subroqasiya üzrə daxilolmalar", "emal": "1C-yə əl ilə",
      "acar": [r"subroq", r"reqres", r"regres", r"zererin evez", r"vurulmus zerer", r"ziyanin odenil", r"i\.i\.n\b", r"icra is",
               r"суброгац", r"регресс"]},
-    {"kod": "emek_haqqi", "ad": "Əmək haqqı (xəzinədarlıq)", "madde": "Əmək haqqı üzrə daxilolmalar", "emal": "1C-yə əl ilə",
+    {"kod": "emek_haqqi", "ad": "Əmək haqqı (xəzinədarlıq)", "teklif": "Əmək haqqı üzrə daxilolmalar", "emal": "1C-yə əl ilə",
      "acar": [r"emek haqq", r"emekhaqq", r"\bmaas", r"\be/h\b", r"заработн"], "xezine": True},
-    {"kod": "ezamiyye", "ad": "Ezamiyyə (xəzinədarlıq)", "madde": "Ezamiyyə üzrə daxilolmalar", "emal": "1C-yə əl ilə",
+    {"kod": "ezamiyye", "ad": "Ezamiyyə (xəzinədarlıq)", "teklif": "Ezamiyyə üzrə daxilolmalar", "emal": "1C-yə əl ilə",
      "acar": [r"ezam", r"komandir"], "xezine": True},
-    {"kod": "telim", "ad": "Təlim haqları", "madde": "Təlim haqları üzrə daxilolmalar", "emal": "1C-yə əl ilə",
+    {"kod": "telim", "ad": "Təlim haqları", "teklif": "Təlim haqları üzrə daxilolmalar", "emal": "1C-yə əl ilə",
      "acar": [r"t[ae]lim", r"tehsil haqq", r"\bkurs", r"namized", r"konsultasiya", r"qiymetlendirme", r"imtahan", r"sertifikat",
               r"обучен"]},
-    {"kod": "qaytarilma", "ad": "Vəsaitin qaytarılması", "madde": "Qaytarılan vəsaitlər üzrə daxilolmalar", "emal": "1C-yə əl ilə",
+    {"kod": "qaytarilma", "ad": "Vəsaitin qaytarılması", "teklif": "Qaytarılan vəsaitlər üzrə daxilolmalar", "emal": "1C-yə əl ilə",
      "acar": [r"qaytarilma", r"geri qaytar", r"artiq odenil"]},
-    {"kod": "depozit", "ad": "Depozitin qaytarılması", "madde": "Depozit məbləğinin qaytarılması", "emal": "1C-yə əl ilə",
+    {"kod": "depozit", "ad": "Depozitin qaytarılması", "teklif": "Depozit məbləğinin qaytarılması", "emal": "1C-yə əl ilə",
      "acar": [r"depozit mebleg", r"depozitin qaytar", r"depozit uzre esas"]},
-    {"kod": "faiz", "ad": "Depozit faizləri", "madde": "Faiz gəlirləri", "emal": "1C-yə əl ilə",
+    {"kod": "faiz", "ad": "Depozit faizləri", "teklif": "Faiz gəlirləri", "emal": "1C-yə əl ilə",
      "acar": [r"faiz"]},
     # avtomatik təyin olunmur: yalnız mühasib seçir (sistemin sualına cavab olaraq)
-    {"kod": "diger", "ad": "Digər daxilolmalar", "madde": "Digər daxilolmalar", "emal": "1C-yə əl ilə", "acar": []},
+    {"kod": "diger", "ad": "Digər daxilolmalar", "teklif": "Digər daxilolmalar", "emal": "1C-yə əl ilə", "acar": []},
 ]
 ZEIF = {"subroqasiya", "qaytarilma"}  # bu kateqoriyalar həmişə «Orta» etibarla təklif olunur (mühasib baxsın)
-YOXLANMALI = {"kod": "yoxlanmali", "ad": "Yoxlanmalı", "madde": "", "emal": "mühasib təyin etməlidir"}
+YOXLANMALI = {"kod": "yoxlanmali", "ad": "Yoxlanmalı", "teklif": "", "emal": "mühasib təyin etməlidir"}
 XEZINE = [r"xezinedar", r"\bdxa\b", r"казначейств", r"maliyye nazirliyi"]
 XEZINE_HESAB = re.compile(r"ctre", re.I)  # Dövlət Xəzinədarlığının hesabları (AZ..CTRE..)
 BANK_ADI = re.compile(r"kapital|\bbank\b", re.I)  # ödəyici yerində vasitəçi bank yazılır
@@ -106,7 +107,12 @@ def _kat(kod):
 
 
 def _madde(kod):
-    return _qaydalar()["madde"].get(kod) or _kat(kod)["madde"]
+    """Mühasibin dediyi maddə adı; hələ deyilməyibsə boş sətir (sistem ad uydurmur)."""
+    return _qaydalar()["madde"].get(kod, "")
+
+
+def _madde_goster(kod):
+    return _madde(kod) or ("" if kod == "yoxlanmali" else "— (hələ deyilməyib)")
 
 
 def _odeyici_acari(voen, odeyici):
@@ -422,7 +428,7 @@ def bank_siyahi(s, kateqoriya=None, n=50):
     k = _kat(kod) if kod else None
     sutunlar = ["Sətir", "Tarix", "Ödəyici", "Məbləğ", "Təyinat", "Kateqoriya", "Maddə", "Etibar", "Səbəb"]  # noqa
     setirler = [[str(r["setir"]), f"{r['tarix']:%d.%m.%Y}" if r["tarix"] else str(r["tarix_xam"] or ""), r["odeyici"], _f(r["mebleg"]),
-                 r["teyinat"][:90], _kat(r["kateqoriya"])["ad"], _madde(r["kateqoriya"]), r["etibar"] or "—", r["sebeb"]] for r in sec[:n]]
+                 r["teyinat"][:90], _kat(r["kateqoriya"])["ad"], _madde_goster(r["kateqoriya"]), r["etibar"] or "—", r["sebeb"]] for r in sec[:n]]
     if kod == "yoxlanmali":  # boş sütunlar (kateqoriya, maddə, etibar) göstərilmir
         sutunlar = ["Sətir", "Tarix", "Ödəyici", "Məbləğ", "Təyinat", "Niyə tanınmadı"]
         setirler = [[x[0], x[1], x[2], x[3], x[4], x[8]] for x in setirler]
@@ -460,8 +466,8 @@ def bank_teyin(s, setir, kateqoriya, yadda_saxla=True):
     else:
         r.update(kateqoriya=kod, etibar="Yüksək", sebeb="mühasib təyin edib", el_ile=True)
     r["cavablandi"] = True
-    metn = (f"Oldu: {r['setir']}-ci sətir ({r['odeyici'] or 'ödəyici yoxdur'}, {_f(r['mebleg'])}) — «{_kat(kod)['ad']}», "
-            f"maddə: «{_madde(kod)}».{elave}")
+    md = (f"maddə: «{_madde(kod)}»" if _madde(kod) else "pul vəsaitinin maddəsini 1C faylı hazırlananda soruşacağam")
+    metn = f"Oldu: {r['setir']}-ci sətir ({r['odeyici'] or 'ödəyici yoxdur'}, {_f(r['mebleg'])}) — «{_kat(kod)['ad']}», {md}.{elave}"
     if b.get("aktiv_sual") is not None:  # sual-cavab rejimindəyik: növbəti sualı ver
         novbeti = bank_sual(s)
         return {"metn": metn + "\n\n" + novbeti["metn"], "ui": novbeti["ui"]}
@@ -531,11 +537,55 @@ def bank_madde(s, kateqoriya, madde):
     q["madde"][kod] = madde
     _qaydalar_yaz(q)
     metn = f"Oldu: «{_kat(kod)['ad']}» üçün maddə bundan sonra «{madde}» yazılacaq. Dəyişmək üçün: «{_kat(kod)['ad']} maddəsi \"...\" olsun»."
+    return _davam(s, kod, metn)
+
+
+def _davam(s, kod, metn):
+    """1C faylı bu kateqoriyanın maddəsini gözləyirdisə: növbəti maddəni soruş və ya faylı hazırla."""
     b = getattr(s, "bank", None)
-    if b and kod == "sigorta_haqqi" and b.get("madde_gozle") is not None:  # fayl bu cavabı gözləyirdi: indi hazırla
-        n = bank_hesabat(s, **b.pop("madde_gozle"))
+    g = b.get("madde_gozle") if b else None
+    if g is not None and g.get("kod") == kod:
+        b.pop("madde_gozle")
+        n = bank_hesabat(s, muqavilesiz=g.get("muqavilesiz", False))
         return {"metn": metn + "\n\n" + n["metn"], "ui": n["ui"]}
     return {"metn": metn, "ui": None}
+
+
+def bank_madde_bos(s, kateqoriya):
+    """Mühasib maddəni indi bilmir: bu kateqoriyanın maddə sütunu bu dəfə boş qalır (yadda saxlanmır)."""
+    b = getattr(s, "bank", None)
+    if not b:
+        return _yoxdur()
+    kod = _kod_tap(kateqoriya)
+    if not kod or kod == "yoxlanmali":
+        return {"metn": f"«{kateqoriya}» kateqoriyası tanınmadı.", "ui": None}
+    if kod == "sigorta_haqqi":
+        return {"metn": "İnteqrasiya faylında maddə boş ola bilməz — 1C sətri tanımaz. 1C-dəki adı yazın və ya «Maddəni sonra deyərəm».",
+                "ui": None}
+    b.setdefault("madde_bos", []).append(kod)
+    metn = f"Oldu: «{_kat(kod)['ad']}» üçün maddə sütunu bu dəfə boş qalacaq (1C-də əl ilə seçərsiniz)."
+    return _davam(s, kod, metn)
+
+
+def _madde_suali(b, kod, muqavilesiz):
+    """Maddəsi deyilməmiş kateqoriya üçün mühasibə sual (fayl hazırlanmır, cavab gözlənilir)."""
+    b["madde_gozle"] = {"kod": kod, "muqavilesiz": muqavilesiz}
+    k = _kat(kod)
+    say = sum(1 for r in b["setirler"] if r["kateqoriya"] == kod)
+    if kod == "sigorta_haqqi":
+        harada = "İnteqrasiya faylında **«Pul vəsaitinin maddəsi»** sütununa nə yazım?"
+    else:
+        harada = f"**«{k['ad']}»** daxilolmaları ({say} sətir) üçün **«Pul vəsaitinin maddəsi»** nə olsun?"
+    variantlar = [{"etiket": f"«{k['teklif']}»", "mesaj": f"{k['ad']} maddəsi \"{k['teklif']}\" olsun", "esas": True}]
+    if kod == "sigorta_haqqi":
+        variantlar.append({"etiket": "«Sığorta haqları üzrə daxilolmalar»",
+                           "mesaj": "Sığorta haqları maddəsi \"Sığorta haqları üzrə daxilolmalar\" olsun"})
+    else:
+        variantlar.append({"etiket": "Bu dəfə boş qalsın", "mesaj": f"{k['ad']} maddəsi boş qalsın", "ikinci": True})
+    variantlar.append({"etiket": "Ləğv et", "mesaj": "Maddəni sonra deyərəm", "ikinci": True})
+    return {"metn": harada + " Ad 1C-dəki maddə ilə hərfi-hərfinə eyni olmalıdır, yoxsa 1C sətri tanımayacaq. "
+                    "Variantı seçin və ya 1C-dəki adı olduğu kimi yazın — yadda saxlayacağam, növbəti dəfə soruşmayacağam.",
+            "ui": {"tip": "sual", "variantlar": variantlar}}
 
 
 # ======================= inteqrasiya şablonu =======================
@@ -589,16 +639,11 @@ def bank_hesabat(s, muqavilesiz=False):
     b = getattr(s, "bank", None)
     if not b:
         return _yoxdur()
-    if "sigorta_haqqi" not in _qaydalar()["madde"]:  # 1C-dəki maddə adını sistem uydurmur — mühasibdən soruşur
-        b["madde_gozle"] = {"muqavilesiz": muqavilesiz}
-        teklif = KATEQORIYALAR[0]["madde"]
-        return {"metn": "İnteqrasiya faylında **«Pul vəsaitinin maddəsi»** sütununa nə yazım? Ad 1C-dəki maddə ilə hərfi-hərfinə "
-                        "eyni olmalıdır, yoxsa 1C sətri tanımayacaq. Aşağıdakı variantı seçin və ya 1C-dəki adı olduğu kimi yazın — "
-                        "yadda saxlayacağam, növbəti dəfə soruşmayacağam.",
-                "ui": {"tip": "sual", "variantlar": [
-                    {"etiket": f"«{teklif}»", "mesaj": f"Sığorta haqları maddəsi \"{teklif}\" olsun", "esas": True},
-                    {"etiket": "«Sığorta haqları üzrə daxilolmalar»", "mesaj": "Sığorta haqları maddəsi \"Sığorta haqları üzrə daxilolmalar\" olsun"},
-                    {"etiket": "Ləğv et", "mesaj": "Maddəni sonra deyərəm", "ikinci": True}]}}
+    # 1C-dəki maddə adını sistem uydurmur: faylda sətri olan hər kateqoriya üçün mühasibdən bir-bir soruşur
+    bilinen, bos = _qaydalar()["madde"], b.get("madde_bos", [])
+    for k in KATEQORIYALAR:
+        if k["kod"] not in bilinen and k["kod"] not in bos and any(r["kateqoriya"] == k["kod"] for r in b["setirler"]):
+            return _madde_suali(b, k["kod"], muqavilesiz)
     b.pop("madde_gozle", None)
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill
@@ -746,15 +791,19 @@ def qayda(s, mesaj):
     m = re.search(r"(\d+)\s*-?\s*(?:ci|cu|cı|cü|ci|nci|ncu|inci|uncu)?\s*set(?:ir|ri)|set(?:ir|ri)\s*(\d+)", n)
     if m and re.search(r"\bkec|sonra|atla", n):
         return "bank_kec", {"setir": int(m.group(1) or m.group(2))}
-    # sistem «maddə nə olsun?» soruşub: növbəti qısa cavab maddənin adıdır
-    if s.bank.get("madde_gozle") is not None and not m:
+    # sistem «maddə nə olsun?» soruşub: növbəti qısa cavab həmin kateqoriyanın maddəsinin adıdır
+    gozle = s.bank.get("madde_gozle")
+    if gozle is not None and not m:
+        kod = gozle.get("kod", "sigorta_haqqi")
         if re.search(r"sonra deyerem|legv|imtina|bilmirem", n):
             s.bank.pop("madde_gozle", None)
             return "bank_xulase", {}
+        if re.search(r"bos qalsin|bos saxla|bos olsun|bos burax", n):
+            return "bank_madde_bos", {"kateqoriya": kod}
         sitat0 = re.search(r"[«\"']([^»\"']+)[»\"']", mesaj)
         if sitat0 or (len(n.split()) <= 8 and not re.search(r"\?|goster|xulase|sual|yoxlan|xeberdar|hazirla", n)
                       and not re.fullmatch(r"\s*(beli|he|hə|xeyr|yox|ok|oldu|duzdur)\W*", n)):
-            return "bank_madde", {"kateqoriya": "sigorta_haqqi", "madde": sitat0.group(1) if sitat0 else mesaj}
+            return "bank_madde", {"kateqoriya": kod, "madde": sitat0.group(1) if sitat0 else mesaj}
     if m and re.search(r"dir|dur|dır|dür|olsun|kimi|yaz|deyis|kecir|\bdi\b|aiddir", n):
         kod = None
         for k in KATEQORIYALAR:
@@ -814,17 +863,19 @@ ALETLER = {
     "bank_kec": (bank_kec, "Sualı sonraya saxlayır və növbəti sualı verir.", {"setir": {"type": "integer"}}),
     "bank_madde": (bank_madde, "Kateqoriyanın pul vəsaitinin maddəsini 1C-dəki adla eyniləşdirir.",
                    {"kateqoriya": _kateq, "madde": {"type": "string"}}),
+    "bank_madde_bos": (bank_madde_bos, "Mühasib maddəni bilmir: kateqoriyanın maddə sütunu bu dəfə boş qalır, 1C faylının hazırlanması davam edir.",
+                       {"kateqoriya": _kateq}),
     "bank_hesabat": (bank_hesabat, "1C üçün Excel: sığorta haqqı inteqrasiya faylı (HS-/BS- müqavilə nömrəli sətirlər) və yoxlama faylı. "
                      "muqavilesiz=true olsa, müqavilə nömrəsi olmayan sığorta haqları da inteqrasiyaya salınır.",
                      {"muqavilesiz": {"type": "boolean"}}),
 }
-MECBURI = {"bank_teyin": ["setir", "kateqoriya"], "bank_madde": ["kateqoriya", "madde"]}
+MECBURI = {"bank_teyin": ["setir", "kateqoriya"], "bank_madde": ["kateqoriya", "madde"], "bank_madde_bos": ["kateqoriya"]}
 
 MODUL = {
     "kod": "bank",
     "ad": "Bank daxilolmaları",
     "tesvir": "Bank çıxarışındakı daxilolmaları təsnif edir (sığorta haqqı, subroqasiya, əmək haqqı, ezamiyyə, təlim), "
-              "maddəni təklif edir və 1C üçün Excel hazırlayır",
+              "pul vəsaitinin maddəsini mühasibdən soruşur və 1C üçün Excel hazırlayır",
     "status": "aktiv",
     "teklifler": [
         {"s": "Bank daxilolmalarının xülasəsi", "b": "Daxilolmalar", "a": "kateqoriyalar üzrə"},

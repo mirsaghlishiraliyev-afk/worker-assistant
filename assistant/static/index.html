@@ -317,7 +317,7 @@ window.fetch = async (...a) => { const r = await _fetch(...a); if(r.status === 4
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const ALET = {xulase:"Ümumi vəziyyət", istisnalar:"İstisnalar", baglantilar:"Bağlantılar", baglantini_tesdiqle:"Təsdiq",
   borclar:"Borclar", qaime_axtar:"Qaimə axtarışı", borc_mektubu:"Borc məktubu", hesabat_yarat:"Excel hesabatı",
-  excel_xulase:"Faylın strukturu", sutunlar:"Sütunlar", setirler:"Sətirlər", qrupla:"Hesablama", en_boyuk:"Sıralama", axtar:"Axtarış", problemler:"Problemlər", vereq_tap:"Vərəq axtarışı", obyekt_gostericisi:"Obyekt üzrə göstərici", cem_hesabla:"Cəm hesablama", movzu_goster:"Mövzu", hesab_ayarla:"Hesab ayarı", bank_xulase:"Bank xülasəsi", bank_siyahi:"Daxilolmalar", bank_teyin:"Kateqoriya təyini", bank_madde:"Maddə", bank_hesabat:"1C faylı", bank_sual:"Mühasibə sual", bank_kec:"Sonraya"};
+  excel_xulase:"Faylın strukturu", sutunlar:"Sütunlar", setirler:"Sətirlər", qrupla:"Hesablama", en_boyuk:"Sıralama", axtar:"Axtarış", problemler:"Problemlər", vereq_tap:"Vərəq axtarışı", obyekt_gostericisi:"Obyekt üzrə göstərici", cem_hesabla:"Cəm hesablama", movzu_goster:"Mövzu", hesab_ayarla:"Hesab ayarı", bank_xulase:"Bank xülasəsi", bank_siyahi:"Daxilolmalar", bank_teyin:"Kateqoriya təyini", bank_madde:"Maddə", bank_madde_bos:"Maddə boş", bank_hesabat:"1C faylı", bank_sual:"Mühasibə sual", bank_kec:"Sonraya"};
 const reqemF = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 const REQEM_DEYER = /^-?\d[\d\s]*(,\d+)?$/;
 const REQEM = new Set(["Cəmi","Ödənilib","Qalıq","ƏDV-siz","ƏDV","Gün"]);
@@ -404,7 +404,7 @@ function sideAlt(r){
   $("#faylBas").textContent = ad + (r.uzlasma ? " · " + r.dovr_sonu.split("-").reverse().join(".") : "");
 }
 // Server versiyası: kod yenilənib, server köhnə qalıbsa, bu yazı köhnə versiyanı göstərir
-const UI_VERSIYA = "1.3.1";
+const UI_VERSIYA = "1.3.2";
 function versiyaCiz(r){
   let el = $("#versiya");
   if(!el){ el = document.createElement("div"); el.id = "versiya"; el.style.cssText = "font:10.5px var(--mono);color:var(--dim);padding:6px 8px 0"; $("#yan").appendChild(el); }

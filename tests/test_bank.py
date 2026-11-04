@@ -18,8 +18,8 @@ class S:
         self.bank = B.oxu(FAYL)
 
 
-def _madde_deyilib():
-    B._qaydalar_yaz({**B._qaydalar(), "madde": {"sigorta_haqqi": "Sığorta haqları"}})
+def _madde_deyilib():  # mühasib bütün kateqoriyaların maddəsini deyib
+    B._qaydalar_yaz({**B._qaydalar(), "madde": {k["kod"]: k["teklif"] for k in B.KATEQORIYALAR}})
 
 
 def _kat(s, setir):
@@ -214,7 +214,42 @@ def test_madde_muhasibden_sorusulur():
     plan = B.qayda(k, "Sığorta haqqı daxilolmaları")                               # mühasib 1C-dəki adı yazır
     assert plan == ("bank_madde", {"kateqoriya": "sigorta_haqqi", "madde": "Sığorta haqqı daxilolmaları"})
     n = B.bank_madde(k, **plan[1])
-    assert "fayllar" in n["ui"]                                                     # cavabdan sonra fayl dərhal hazırlanır
+    assert n["ui"]["tip"] == "sual" and k.bank["madde_gozle"]["kod"] != "sigorta_haqqi"   # növbəti kateqoriyanı soruşur
+    while n["ui"]["tip"] == "sual":                                                 # qalanlara təklif olunan variantla cavab
+        n = B.bank_madde(k, k.bank["madde_gozle"]["kod"], B._kat(k.bank["madde_gozle"]["kod"])["teklif"])
+    assert "fayllar" in n["ui"]                                                     # son cavabdan sonra fayl dərhal hazırlanır
     rows = list(openpyxl.load_workbook(QOV / n["ui"]["fayllar"][0]["ad"])["Sheet1"].iter_rows(values_only=True))
     assert rows[1][5] == "Sığorta haqqı daxilolmaları" and rows[1][3] == "AZ00TEST0000000000000000000"
     assert "fayllar" in B.bank_hesabat(k)["ui"]                                     # ikinci dəfə soruşmur
+
+
+def test_her_kateqoriyanin_maddesi_sorusulur():
+    import openpyxl
+    B.QAYDA_FAYLI, B.HESABAT_QOVLUGU = QOV / "madde_hamisi.json", QOV
+
+    class K:
+        bank = B.oxu(KAPITAL)
+    k = K()
+    assert B._madde("telim") == ""                                                  # sistem ad uydurmur
+    sorusulan = []
+    n = B.bank_hesabat(k)
+    while n["ui"]["tip"] == "sual":                                                 # hər kateqoriya üçün bir-bir soruşur
+        kod = k.bank["madde_gozle"]["kod"]
+        sorusulan.append(kod)
+        cavab = "Faiz maddəsi boş qalsın" if kod == "faiz" else f"«1C {kod}»"
+        plan = B.qayda(k, cavab)
+        assert plan[1]["kateqoriya"] == kod
+        n = T_cagir(k, plan)
+    assert sorusulan == ["sigorta_haqqi", "ezamiyye", "telim", "qaytarilma", "depozit", "faiz"]
+    wb = openpyxl.load_workbook(QOV / n["ui"]["fayllar"][1]["ad"])
+    assert wb["Təlim haqları"]["G2"].value == "1C telim"
+    assert wb["Depozit faizləri"]["G2"].value is None                               # mühasib boş saxladı
+    assert B._madde("faiz") == ""                                                   # boş saxlamaq yadda qalmır
+    assert "fayllar" in B.bank_hesabat(k)["ui"]                                     # eyni çıxarışda yenidən soruşmur
+    yeni = type("Y", (), {"bank": B.oxu(KAPITAL)})()
+    n = B.bank_hesabat(yeni)                                                        # yeni çıxarışda faizi yenə soruşur
+    assert n["ui"]["tip"] == "sual" and yeni.bank["madde_gozle"]["kod"] == "faiz"
+
+
+def T_cagir(s, plan):
+    return getattr(B, plan[0])(s, **plan[1])

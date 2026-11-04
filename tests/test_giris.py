@@ -113,7 +113,7 @@ def test_her_istifadecinin_oz_sessiyasi():
     assert b.get(f"/api/yukle/{j['is']}").status_code == 404           # başqasının işini görmür
     assert a.get("/api/veziyyet").json()["hazir"] is True
     assert b.get("/api/veziyyet").json()["hazir"] is False             # Rəşad Aynurun faylını görmür
-    B._qaydalar_yaz({**B._qaydalar(), "madde": {"sigorta_haqqi": "Sığorta haqları"}})   # mühasib maddəni deyib
+    B._qaydalar_yaz({**B._qaydalar(), "madde": {k["kod"]: k["teklif"] for k in B.KATEQORIYALAR}})   # mühasib maddələri deyib
     r = a.post("/api/sohbet", json={"mesaj": "1C üçün Excel hazırla"}).json()
     url = r["hadiseler"][0]["ui"]["fayllar"][0]["url"]
     assert a.get(url).status_code == 200
