@@ -84,8 +84,8 @@ class QaydaMuherriki:
             uygun = [a for a in vv if re.search(r"yoxlan|istisna|tesdiq gozle|taninmayan", T.norm(a))]
             if uygun:
                 netice = et("setirler", vereq=uygun[0], n=30)
-                return (f"«Yoxlanmalı daxilolmalar» bank çıxarışı üçündür, bu fayl isə çıxarış deyil. Bu faylda yoxlanmalı "
-                        f"məlumat «{uygun[0]}» vərəqindədir: " + netice["metn"].split("\n")[0]), hadiseler
+                return (f"«Yoxlanmalı daxilolmalar» bank çıxarışı üçündür, bu fayl isə çıxarış deyil. Bu faylda baxılmalı "
+                        f"məlumat «{uygun[0]}» vərəqindədir ({vv[uygun[0]]['setir']} sətir) — aşağıdadır."), hadiseler
             return (f"«Yoxlanmalı daxilolmalar» bank çıxarışı üçündür, «{s.excel['ad']}» isə bank çıxarışı deyil "
                     f"(Kredit/Mədaxil və Təyinat sütunları olan vərəq tapılmadı). Bank çıxarışını «⟳ Faylı dəyiş» ilə yükləyin — "
                     f"sual avtomatik cavablandırılacaq. Bu faylda səhvləri axtarmaq üçün «Problemləri tap» yazın."), []

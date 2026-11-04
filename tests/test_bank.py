@@ -18,6 +18,10 @@ class S:
         self.bank = B.oxu(FAYL)
 
 
+def _madde_deyilib():
+    B._qaydalar_yaz({**B._qaydalar(), "madde": {"sigorta_haqqi": "Sığorta haqları"}})
+
+
 def _kat(s, setir):
     return next(r for r in s.bank["setirler"] if r["setir"] == setir)["kateqoriya"]
 
@@ -66,6 +70,7 @@ def test_oyrenme_ve_madde():
 def test_1c_fayli():
     import openpyxl
     s = S("hesabat.json")
+    _madde_deyilib()
     n = B.bank_hesabat(s)
     wb = openpyxl.load_workbook(QOV / n["ui"]["fayllar"][1]["ad"])   # yoxlama faylı
     ws = wb["1C - Sığorta haqları"]
@@ -121,6 +126,7 @@ def test_1c_inteqrasiya_sablonu():
 
     class K:
         bank = B.oxu(KAPITAL)
+    _madde_deyilib()
     n = B.bank_hesabat(K())
     f1c = n["ui"]["fayllar"][0]["ad"]
     wb = openpyxl.load_workbook(QOV / f1c)
@@ -128,7 +134,7 @@ def test_1c_inteqrasiya_sablonu():
     rows = list(wb["Sheet1"].iter_rows(values_only=True))
     assert list(rows[0]) == ["TARİX", "Sığortalı Fin/Voen", "Sığorta müqaviləsinin nömrəsi", "HESAB NÖMRƏSİ", "MƏBLƏĞ", "Pul vəsaitinin maddəsi"]
     assert len(rows) == 2                                       # yalnız HS- nömrəli sətir
-    assert rows[1][1:5] == ("1234567890", "HS-2026000001-QS", "AZ00RBTA00000000000000000099", 2700)
+    assert rows[1][1:5] == ("1234567890", "HS-2026000001-QS", "AZ00TEST0000000000000000000", 2700)   # Fondun hesabı
     assert rows[1][5] == "Sığorta haqları"
 
 
@@ -140,6 +146,7 @@ def test_muqavilesizler_istege_gore():
         bank = B.oxu(KAPITAL)
     plan = B.qayda(K(), "Müqaviləsizləri də şablona sal")
     assert plan == ("bank_hesabat", {"muqavilesiz": True})
+    _madde_deyilib()
     n = B.bank_hesabat(K(), **plan[1])
     rows = list(openpyxl.load_workbook(QOV / n["ui"]["fayllar"][0]["ad"])["Sheet1"].iter_rows(values_only=True))
     assert len(rows) == 3                                       # HS- nömrəli + müqaviləsiz sığorta haqqı
@@ -188,7 +195,26 @@ def test_mushasibin_sablonunu_doldurur():
     class K:
         bank = B.oxu(KAPITAL)
         sablon = {"yol": yol, "ad": yol.name}
+    _madde_deyilib()
     n = B.bank_hesabat(K())
     assert n["metn"].startswith("«Sığorta haqqı inteqrasiya faylı.xlsx» şablonunuz dolduruldu: 1 yeni sətir")
     rows = list(openpyxl.load_workbook(QOV / n["ui"]["fayllar"][0]["ad"])["Sheet1"].iter_rows(values_only=True))
     assert len(rows) == 3 and rows[1][2] == "HS-2026000000-QS" and rows[2][2] == "HS-2026000001-QS"   # köhnə sətir qalır
+
+
+def test_madde_muhasibden_sorusulur():
+    import openpyxl
+    B.QAYDA_FAYLI, B.HESABAT_QOVLUGU = QOV / "madde.json", QOV
+
+    class K:
+        bank = B.oxu(KAPITAL)
+    k = K()
+    n = B.bank_hesabat(k)
+    assert "Pul vəsaitinin maddəsi" in n["metn"] and n["ui"]["tip"] == "sual"     # fayl hazırlanmır, soruşur
+    plan = B.qayda(k, "Sığorta haqqı daxilolmaları")                               # mühasib 1C-dəki adı yazır
+    assert plan == ("bank_madde", {"kateqoriya": "sigorta_haqqi", "madde": "Sığorta haqqı daxilolmaları"})
+    n = B.bank_madde(k, **plan[1])
+    assert "fayllar" in n["ui"]                                                     # cavabdan sonra fayl dərhal hazırlanır
+    rows = list(openpyxl.load_workbook(QOV / n["ui"]["fayllar"][0]["ad"])["Sheet1"].iter_rows(values_only=True))
+    assert rows[1][5] == "Sığorta haqqı daxilolmaları" and rows[1][3] == "AZ00TEST0000000000000000000"
+    assert "fayllar" in B.bank_hesabat(k)["ui"]                                     # ikinci dəfə soruşmur

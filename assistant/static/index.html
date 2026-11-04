@@ -404,7 +404,7 @@ function sideAlt(r){
   $("#faylBas").textContent = ad + (r.uzlasma ? " · " + r.dovr_sonu.split("-").reverse().join(".") : "");
 }
 // Server versiyası: kod yenilənib, server köhnə qalıbsa, bu yazı köhnə versiyanı göstərir
-const UI_VERSIYA = "1.3.0";
+const UI_VERSIYA = "1.3.1";
 function versiyaCiz(r){
   let el = $("#versiya");
   if(!el){ el = document.createElement("div"); el.id = "versiya"; el.style.cssText = "font:10.5px var(--mono);color:var(--dim);padding:6px 8px 0"; $("#yan").appendChild(el); }
@@ -548,6 +548,7 @@ async function cavabla(metn){
   gozleyenSual = r.fayl_lazim ? metn : null;
   if((r.hadiseler || []).some(h => ["baglantini_tesdiqle", "bank_teyin", "hesab_ayarla"].includes(h.alet))) veziyyet();
   mesgul = false; yeniləDuyme();
+  return r;
 }
 async function gonder(metn){
   metn = metn.trim(); if(!metn || mesgul) return;
@@ -716,8 +717,9 @@ async function isiIzle(is){
       $("#eAd").textContent = j.fayl + " + " + j.sablon;
       $("#eSt").textContent = `Bank çıxarışı · ${reqemF(j.bank.daxilolma)} daxilolma · şablon: ${j.sablon}`;
       await aiMsj({cavab: `Bank çıxarışı (${reqemF(j.bank.daxilolma)} daxilolma) və «${j.sablon}» şablonu qəbul olundu. Şablonu doldururam.`, hadiseler: []}, false);
-      await cavabla("Şablonu doldur");
-      if(j.bank.sual){
+      const dr = await cavabla("Şablonu doldur");
+      // sistem maddəni soruşubsa — əvvəl o cavablansın, daxilolma sualları sonra
+      if(j.bank.sual && !(dr?.hadiseler || []).some(h => h.ui?.tip === "sual")){
         await aiMsj({cavab: `${j.bank.sual} daxilolmada əmin deyiləm — sizdən bir-bir soruşuram. Cavablardan sonra «Şablonu doldur» yazsanız, fayl yenidən hazırlanacaq.`, hadiseler: []}, false);
         await cavabla("Sualları ver");
       }

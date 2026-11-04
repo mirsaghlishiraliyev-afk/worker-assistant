@@ -524,10 +524,18 @@ def bank_madde(s, kateqoriya, madde):
     kod = _kod_tap(kateqoriya)
     if not kod or kod == "yoxlanmali":
         return {"metn": f"«{kateqoriya}» kateqoriyası tanınmadı.", "ui": None}
+    madde = madde.strip().strip("«»\"'").strip()
+    if not madde:
+        return {"metn": "Maddənin adı boşdur — 1C-dəki adı yazın.", "ui": None}
     q = _qaydalar()
-    q["madde"][kod] = madde.strip()
+    q["madde"][kod] = madde
     _qaydalar_yaz(q)
-    return {"metn": f"Oldu: «{_kat(kod)['ad']}» üçün maddə bundan sonra «{madde.strip()}» yazılacaq.", "ui": None}
+    metn = f"Oldu: «{_kat(kod)['ad']}» üçün maddə bundan sonra «{madde}» yazılacaq. Dəyişmək üçün: «{_kat(kod)['ad']} maddəsi \"...\" olsun»."
+    b = getattr(s, "bank", None)
+    if b and kod == "sigorta_haqqi" and b.get("madde_gozle") is not None:  # fayl bu cavabı gözləyirdi: indi hazırla
+        n = bank_hesabat(s, **b.pop("madde_gozle"))
+        return {"metn": metn + "\n\n" + n["metn"], "ui": n["ui"]}
+    return {"metn": metn, "ui": None}
 
 
 # ======================= inteqrasiya şablonu =======================
@@ -581,6 +589,17 @@ def bank_hesabat(s, muqavilesiz=False):
     b = getattr(s, "bank", None)
     if not b:
         return _yoxdur()
+    if "sigorta_haqqi" not in _qaydalar()["madde"]:  # 1C-dəki maddə adını sistem uydurmur — mühasibdən soruşur
+        b["madde_gozle"] = {"muqavilesiz": muqavilesiz}
+        teklif = KATEQORIYALAR[0]["madde"]
+        return {"metn": "İnteqrasiya faylında **«Pul vəsaitinin maddəsi»** sütununa nə yazım? Ad 1C-dəki maddə ilə hərfi-hərfinə "
+                        "eyni olmalıdır, yoxsa 1C sətri tanımayacaq. Aşağıdakı variantı seçin və ya 1C-dəki adı olduğu kimi yazın — "
+                        "yadda saxlayacağam, növbəti dəfə soruşmayacağam.",
+                "ui": {"tip": "sual", "variantlar": [
+                    {"etiket": f"«{teklif}»", "mesaj": f"Sığorta haqları maddəsi \"{teklif}\" olsun", "esas": True},
+                    {"etiket": "«Sığorta haqları üzrə daxilolmalar»", "mesaj": "Sığorta haqları maddəsi \"Sığorta haqları üzrə daxilolmalar\" olsun"},
+                    {"etiket": "Ləğv et", "mesaj": "Maddəni sonra deyərəm", "ikinci": True}]}}
+    b.pop("madde_gozle", None)
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill
     wb = Workbook()
@@ -610,19 +629,21 @@ def bank_hesabat(s, muqavilesiz=False):
                 ws.append(setir(r))
         return ws
 
+    hesab_no = (b.get("meta") or {}).get("hesab", "")  # Aqrar Sığorta Fondunun pul daxil olan hesabı (çıxarışın başlığından)
+
     def inteqrasiya(r):  # 1C inteqrasiya faylına müqavilə nömrəsi (HS-/BS-) olan sığorta haqları düşür;
         # mühasib istəsə (muqavilesiz=True), müqaviləsizlər də — nömrə sütunu boş qalır
         return r["kateqoriya"] == "sigorta_haqqi" and (r["muqavile"] or muqavilesiz) and r["setir"] not in tekrar
 
     def setir_1c(r):  # FİN/VÖEN və ödəyicinin hesabı təyinatdan götürülür
         d = {"TARİX": r["tarix"], "Sığortalı Fin/Voen": r.get("t_fin_voen") or r.get("fin") or r["voen"],
-             "Sığorta müqaviləsinin nömrəsi": r["muqavile"], "HESAB NÖMRƏSİ": r.get("odeyici_hesab", ""),
+             "Sığorta müqaviləsinin nömrəsi": r["muqavile"], "HESAB NÖMRƏSİ": hesab_no,
              "MƏBLƏĞ": r["mebleg"], "Pul vəsaitinin maddəsi": _madde(r["kateqoriya"])}
         return [d.get(c, "") for c in SUTUNLAR_1C]
 
     def qeyd(r):
         return "; ".join(x for x in [("FİN/VÖEN təyinatda yoxdur" if not (r.get("t_fin_voen") or r.get("fin") or r["voen"]) else ""),
-                                     ("ödəyicinin hesabı təyinatda yoxdur" if not r.get("odeyici_hesab") else "")] if x)
+                                     ("Fondun hesab nömrəsi çıxarışda tapılmadı" if not hesab_no else "")] if x)
     # yoxlama faylında: 1C sütunları + mühasibin yoxlaması üçün ödəyici və təyinat
     w1 = wb.create_sheet("1C - Sığorta haqları")
     w1.append(SUTUNLAR_1C + ["Çıxarış sətri", "Ödəyici", "Təyinat", "Qeyd"])
@@ -698,22 +719,20 @@ def bank_hesabat(s, muqavilesiz=False):
     yox = sum(1 for r in b["setirler"] if r["kateqoriya"] == "yoxlanmali" or r["setir"] in tekrar)
     natamam = sum(1 for r in b["setirler"] if inteqrasiya(r) and qeyd(r))
     musz = sum(1 for r in b["setirler"] if r["kateqoriya"] == "sigorta_haqqi" and r["setir"] not in tekrar and not r["muqavile"])
-    sablon_metn = (f" Yüklədiyiniz «{sablon['ad']}» şablonu dolduruldu" + (f" (əvvəlki {evvelki} sətir saxlanıb, yenilər altına yazılıb)" if evvelki else "") + "."
-                   if sablon else "")
-    if muqavilesiz:
-        bas = (f"İki fayl hazırdır: «Sığorta haqqı inteqrasiya faylı» — {sh} sətir, o cümlədən müqavilə nömrəsi olmayan {musz} sətir "
-               f"(nömrə sütunu boş); və yoxlama faylı (bütün kateqoriyalar" + (f", {yox} sətir «Yoxlanmalı»" if yox else "") + ").")
+    # mesaj: əvvəl nə hazırlandı, sonra nəyə baxmaq lazımdır
+    if sablon:
+        bas = f"«{sablon['ad']}» şablonunuz dolduruldu: {sh} yeni sətir" + \
+              (f" (əvvəlki {evvelki} sətir saxlanıb, yenilər altına yazılıb)" if evvelki else "") + "."
     else:
-        bas = (f"İki fayl hazırdır: «Sığorta haqqı inteqrasiya faylı» — müqavilə nömrəsi (HS-/BS-) olan {sh} sətir, şablonunuzla eyni "
-               f"sütunlar; və yoxlama faylı (bütün kateqoriyalar" + (f", {yox} sətir «Yoxlanmalı»" if yox else "") + ")." +
-               (f" Müqavilə nömrəsi olmayan {musz} sığorta haqqı inteqrasiyaya düşmür — yoxlama faylında ayrıca vərəqdədir. "
-                f"Onları da şablona salmaq üçün yazın: «Müqaviləsizləri də şablona sal»." if musz else ""))
-    if sablon:  # əsas nəticə şablondur: əvvəl onu de
-        bas = (f"«{sablon['ad']}» şablonunuz dolduruldu: {sh} yeni sətir" + (f" (əvvəlki {evvelki} sətir saxlanıb, yenilər altına yazılıb)" if evvelki else "") +
-               ". Yanında yoxlama faylı da var." + bas[bas.index(")") + 2:] if ")" in bas else bas)
-        sablon_metn = ""
-    return {"metn": bas + sablon_metn +
-                    (f" {natamam} sətirdə FİN/VÖEN və ya ödəyicinin hesabı təyinatda tapılmadı — «Qeyd» sütununa baxın." if natamam else ""),
+        bas = f"«Sığorta haqqı inteqrasiya faylı» hazırdır: {sh} sətir, şablonla eyni sütunlar."
+    if muqavilesiz and musz:
+        bas += f" Bunlardan {musz}-i müqavilə nömrəsi olmayan sətirdir (nömrə sütunu boş)."
+    elif musz:
+        bas += (f" Müqavilə nömrəsi (HS-/BS-) olmayan {musz} sığorta haqqı inteqrasiyaya düşmür — yoxlama faylında ayrıca vərəqdədir; "
+                f"onları da salmaq üçün yazın: «Müqaviləsizləri də şablona sal».")
+    bas += f" Hesab nömrəsi: {hesab_no or '— (çıxarışda tapılmadı)'}; maddə: «{_madde('sigorta_haqqi')}»."
+    bas += " Yanında yoxlama faylı da var" + (f" ({yox} sətir «Yoxlanmalı»)" if yox else "") + "."
+    return {"metn": bas + (f" {natamam} sətirdə FİN/VÖEN tapılmadı — «Qeyd» sütununa baxın." if natamam else ""),
             "ui": {"tip": "fayllar", "fayllar": [{"ad": ad_1c, "url": "/api/fayl/" + quote(ad_1c)}, {"ad": ad, "url": "/api/fayl/" + quote(ad)}]}}
 
 
@@ -727,6 +746,15 @@ def qayda(s, mesaj):
     m = re.search(r"(\d+)\s*-?\s*(?:ci|cu|cı|cü|ci|nci|ncu|inci|uncu)?\s*set(?:ir|ri)|set(?:ir|ri)\s*(\d+)", n)
     if m and re.search(r"\bkec|sonra|atla", n):
         return "bank_kec", {"setir": int(m.group(1) or m.group(2))}
+    # sistem «maddə nə olsun?» soruşub: növbəti qısa cavab maddənin adıdır
+    if s.bank.get("madde_gozle") is not None and not m:
+        if re.search(r"sonra deyerem|legv|imtina|bilmirem", n):
+            s.bank.pop("madde_gozle", None)
+            return "bank_xulase", {}
+        sitat0 = re.search(r"[«\"']([^»\"']+)[»\"']", mesaj)
+        if sitat0 or (len(n.split()) <= 8 and not re.search(r"\?|goster|xulase|sual|yoxlan|xeberdar|hazirla", n)
+                      and not re.fullmatch(r"\s*(beli|he|hə|xeyr|yox|ok|oldu|duzdur)\W*", n)):
+            return "bank_madde", {"kateqoriya": "sigorta_haqqi", "madde": sitat0.group(1) if sitat0 else mesaj}
     if m and re.search(r"dir|dur|dır|dür|olsun|kimi|yaz|deyis|kecir|\bdi\b|aiddir", n):
         kod = None
         for k in KATEQORIYALAR:
