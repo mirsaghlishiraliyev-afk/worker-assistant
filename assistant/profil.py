@@ -1,7 +1,8 @@
 """İstifadəçi profili: işçinin məşğul olduğu peşələr (hər istifadəçinin öz faylında, WA_DATA/profil/).
 
-Girişdən sonra peşələr seçilməyibsə, interfeys soruşur; cavab yadda qalır və istənilən kompüterdən keçərlidir.
-Seçilmiş peşələrə uyğun modullar yan paneldə öndə göstərilir, boş ekrandakı nümunə sorğular da onlardan gəlir.
+Girişdən sonra peşələr seçilməyibsə, interfeys soruşur (yalnız siyahıdan seçilir); cavab yadda qalır və istənilən
+kompüterdən keçərlidir. Hər peşənin öz hazır həlləri var: boş ekranda istifadəçiyə peşəsinə görə həllər təklif olunur.
+Həllər yalnız sistemin bu gün həqiqətən bacardığı sorğulardır (modulu hələ qurulmayan peşələrə Excel təhlili ilə).
 """
 import hashlib
 import json
@@ -13,17 +14,40 @@ from .state import DATA
 QOVLUQ = DATA / "profil"
 _KILID = threading.Lock()
 
-# Peşə -> uyğun modulların kodları (assistant/modullar)
+# Peşə -> uyğun modullar və hazır həllər. «s» — sistemə gedən sorğu (lokal rejimdə başa düşülən), «b» — başlıq, «a» — izah.
 PESELER = [
-    {"kod": "muhasib", "ad": "Mühasib", "tesvir": "bank daxilolmaları, uzlaşma, 1C", "modullar": ["bank", "muhasibat", "excel"]},
-    {"kod": "maliyye", "ad": "Maliyyə / iqtisadçı", "tesvir": "hesabatlar, Excel təhlili", "modullar": ["excel", "muhasibat"]},
-    {"kod": "huquq", "ad": "Hüquqşünas", "tesvir": "müqavilələr, müddətlər", "modullar": ["muqavile"]},
-    {"kod": "karguzar", "ad": "Kargüzar", "tesvir": "məktublar, sənəd dövriyyəsi", "modullar": ["senedler"]},
-    {"kod": "kadr", "ad": "Kadr mütəxəssisi", "tesvir": "məzuniyyət, əmrlər, tabel", "modullar": ["kadr"]},
-    {"kod": "rehber", "ad": "Rəhbər", "tesvir": "xülasələr, nəzarət", "modullar": ["bank", "muhasibat", "excel"]},
+    {"kod": "muhasib", "ad": "Mühasib", "tesvir": "bank daxilolmaları, uzlaşma, 1C", "modullar": ["bank", "muhasibat", "excel"],
+     "heller": [
+         {"s": "1C üçün Excel hazırla", "b": "Bank çıxarışından 1C faylı", "a": "sığorta haqları inteqrasiya faylı"},
+         {"s": "Yoxlanmalıları göstər", "b": "Tanınmayan daxilolmalar", "a": "kateqoriyanı siz təyin edin"},
+         {"s": "Vəziyyət necədir?", "b": "Uzlaşmanın vəziyyəti", "a": "bağlanma faizi, istisnalar, borclar"},
+         {"s": "Debitor borcları göstər", "b": "Debitor borclar", "a": "bizə kim nə qədər borcludur"}]},
+    {"kod": "maliyye", "ad": "Maliyyə / iqtisadçı", "tesvir": "hesabatlar, Excel təhlili", "modullar": ["excel", "muhasibat"],
+     "heller": [
+         {"s": "Şirkətin ümumi xərci nə qədərdir?", "b": "Ümumi xərc", "a": "uçot yazılışlarından hesablanır"},
+         {"s": "Fayl haqqında ümumi məlumat ver", "b": "Hesabatın strukturu", "a": "vərəqlər, sütunlar, sətir sayı"},
+         {"s": "Fayldakı problemləri tap", "b": "Hesabatda səhvlər", "a": "təkrarlar, boş xanalar, qeyri-adi dəyərlər"},
+         {"s": "Vəziyyət necədir?", "b": "Uzlaşmanın vəziyyəti", "a": "bağlanma faizi, istisnalar"}]},
+    {"kod": "huquq", "ad": "Hüquqşünas", "tesvir": "müqavilələr, müddətlər", "modullar": ["muqavile", "excel"],
+     "heller": [
+         {"s": "Fayl haqqında ümumi məlumat ver", "b": "Müqavilə reyestrinin strukturu", "a": "Excel reyestrini yükləyin"},
+         {"s": "Fayldakı problemləri tap", "b": "Reyestrdə səhvlər", "a": "təkrar nömrələr, boş xanalar"}]},
+    {"kod": "karguzar", "ad": "Kargüzar", "tesvir": "məktublar, sənəd dövriyyəsi", "modullar": ["senedler", "excel"],
+     "heller": [
+         {"s": "Fayl haqqında ümumi məlumat ver", "b": "Qeydiyyat jurnalının strukturu", "a": "Excel jurnalını yükləyin"},
+         {"s": "Fayldakı problemləri tap", "b": "Jurnalda səhvlər", "a": "təkrar qeydiyyat, boş xanalar"}]},
+    {"kod": "kadr", "ad": "Kadr mütəxəssisi", "tesvir": "məzuniyyət, əmrlər, tabel", "modullar": ["kadr", "excel"],
+     "heller": [
+         {"s": "Fayl haqqında ümumi məlumat ver", "b": "Tabelin / kadr cədvəlinin strukturu", "a": "Excel faylını yükləyin"},
+         {"s": "Fayldakı problemləri tap", "b": "Tabeldə səhvlər", "a": "təkrarlar, boş xanalar, qeyri-adi dəyərlər"}]},
+    {"kod": "rehber", "ad": "Rəhbər", "tesvir": "xülasələr, nəzarət", "modullar": ["bank", "muhasibat", "excel"],
+     "heller": [
+         {"s": "Vəziyyət necədir?", "b": "Ümumi vəziyyət", "a": "bağlanma faizi, istisnalar, borclar"},
+         {"s": "Bank daxilolmalarının xülasəsi", "b": "Daxilolmalar", "a": "kateqoriyalar üzrə"},
+         {"s": "Debitor borcları göstər", "b": "Debitor borclar", "a": "bizə kim nə qədər borcludur"},
+         {"s": "Şirkətin ümumi xərci nə qədərdir?", "b": "Ümumi xərc", "a": "uçot yazılışlarından"}]},
 ]
 KODLAR = {p["kod"] for p in PESELER}
-MAKS_DIGER = 80
 
 
 def _fayl(login):
@@ -32,28 +56,29 @@ def _fayl(login):
 
 
 def al(login):
-    """Seçilmiş peşələr: {"peseler": [...], "diger": "..."}; hələ seçilməyibsə None."""
+    """Seçilmiş peşələr: {"peseler": [...]}; hələ seçilməyibsə None."""
     with _KILID:
         try:
             d = json.loads(_fayl(login).read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return None
-    return {"peseler": [k for k in d.get("peseler", []) if k in KODLAR], "diger": d.get("diger", "")}
+    peseler = [k for k in d.get("peseler", []) if k in KODLAR]
+    return {"peseler": peseler} if peseler else None  # siyahıdan heç nə seçilməyibsə — yenidən soruşulur
 
 
-def saxla(login, peseler, diger=""):
+def saxla(login, peseler):
+    """Yalnız siyahıdakı peşələr qəbul olunur (istifadəçi özü peşə yazmır)."""
     peseler = [k for k in dict.fromkeys(peseler or []) if k in KODLAR]
-    diger = " ".join(str(diger or "").split())[:MAKS_DIGER]
-    if not peseler and not diger:
-        raise ValueError("Ən azı bir peşə seçin və ya «Digər» sahəsinə yazın.")
-    d = {"login": login, "peseler": peseler, "diger": diger, "vaxt": time.time()}
+    if not peseler:
+        raise ValueError("Siyahıdan ən azı bir peşə seçin.")
+    d = {"login": login, "peseler": peseler, "vaxt": time.time()}
     with _KILID:
         QOVLUQ.mkdir(parents=True, exist_ok=True)
         f = _fayl(login)
         tmp = f.with_suffix(".tmp")
         tmp.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
         tmp.replace(f)
-    return {"peseler": peseler, "diger": diger}
+    return {"peseler": peseler}
 
 
 def modullar(profil):
@@ -63,4 +88,16 @@ def modullar(profil):
         for m in next(p for p in PESELER if p["kod"] == k)["modullar"]:
             if m not in out:
                 out.append(m)
+    return out
+
+
+def heller(profil):
+    """İstifadəçiyə peşəsinə görə hazır həllər (bir neçə peşə: hər birindən, təkrarsız)."""
+    out, gorulen = [], set()
+    for k in (profil or {}).get("peseler", []):
+        p = next(x for x in PESELER if x["kod"] == k)
+        for h in p["heller"]:
+            if h["s"] not in gorulen:
+                gorulen.add(h["s"])
+                out.append({**h, "pese": p["ad"]})
     return out

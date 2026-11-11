@@ -415,11 +415,26 @@ def test_pesheler_sorusulur_ve_yadda_qalir():
     _gir(b, "resad", "Parol2")
     v = a.get("/api/veziyyet").json()
     assert v["profil"] is None and any(p["kod"] == "muhasib" for p in v["peseler"])   # seçilməyib: interfeys soruşur
-    assert a.put("/api/profil", json={"peseler": [], "diger": " "}).status_code == 400  # boş seçim qəbul olunmur
-    r = a.put("/api/profil", json={"peseler": ["muhasib", "yoxdur", "muhasib"], "diger": "  satınalma   mütəxəssisi "})
-    assert r.json()["profil"] == {"peseler": ["muhasib"], "diger": "satınalma mütəxəssisi"}
+    assert a.put("/api/profil", json={"peseler": []}).status_code == 400               # boş seçim qəbul olunmur
+    assert a.put("/api/profil", json={"peseler": ["satinalma"]}).status_code == 400     # siyahıda olmayan peşə yazıla bilməz
+    r = a.put("/api/profil", json={"peseler": ["muhasib", "yoxdur", "muhasib"], "diger": "özü yazdığı"})
+    assert r.json()["profil"] == {"peseler": ["muhasib"]}
+    h = a.get("/api/veziyyet").json()["heller"]                                         # həllər peşəyə görə
+    assert h[0]["s"] == "1C üçün Excel hazırla" and all(x["pese"] == "Mühasib" for x in h)
     assert TestClient(app, cookies=a.cookies).get("/api/veziyyet").json()["profil"]["peseler"] == ["muhasib"]   # yeni brauzerdə də
     assert b.get("/api/veziyyet").json()["profil"] is None                                # başqa istifadəçinin seçimi ayrıdır
     from assistant import profil as PR
     assert PR.modullar({"peseler": ["muhasib", "huquq"]}) == ["bank", "muhasibat", "excel", "muqavile"]
-    assert {m for p in PR.PESELER for m in p["modullar"]} <= {m["kod"] for m in __import__("assistant.tools", fromlist=["x"]).modullar()}
+    hl = PR.heller({"peseler": ["muhasib", "rehber"]})
+    assert len({x["s"] for x in hl}) == len(hl) and {x["pese"] for x in hl} == {"Mühasib", "Rəhbər"}   # təkrarsız
+
+
+def test_hellerin_hamisi_basa_dusulur():
+    """Peşə həllərinin hər sorğusu işləyən modulların öz sorğularındandır (boş vəd yoxdur)."""
+    from assistant import profil as PR
+    from assistant.modullar import AKTIV
+    from assistant.tools import norm
+    isleyen = {norm(t["s"]) for m in AKTIV for t in m.MODUL["teklifler"]}
+    for p in PR.PESELER:
+        assert p["heller"], p["kod"]
+        assert all(norm(h["s"]) in isleyen for h in p["heller"]), p["kod"]

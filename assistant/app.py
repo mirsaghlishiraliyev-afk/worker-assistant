@@ -211,7 +211,6 @@ def sohbet_sil(sid: str):
 # ---------------- profil: istifadəçinin peşələri ----------------
 class Profil(BaseModel):
     peseler: list[str] = []
-    diger: str = ""
 
 
 @app.get("/api/profil")
@@ -222,7 +221,7 @@ def profil_al():
 @app.put("/api/profil")
 def profil_saxla(p: Profil):
     try:
-        return {"profil": PR.saxla(_CARI.get(), p.peseler, p.diger)}
+        return {"profil": PR.saxla(_CARI.get(), p.peseler)}
     except ValueError as e:
         raise HTTPException(400, str(e))
 
@@ -251,7 +250,7 @@ def veziyyet(request: Request = None):
             "xulase": T.xulase(S)["ui"] if S.hazir else None,
             "teklifler": getattr(S, "teklifler", []),
             "istifadeci": {"ad": u.get("a") or u["l"], "login": u["l"]} if u else None,
-            "profil": PR.al(_CARI.get()), "peseler": PR.PESELER,
+            "profil": PR.al(_CARI.get()), "peseler": PR.PESELER, "heller": PR.heller(PR.al(_CARI.get())),
             "sablon": S.sablon["ad"] if getattr(S, "sablon", None) else None,
             "bank": ({"daxilolma": len(S.bank["setirler"]), "yoxlanmali": sum(r["kateqoriya"] == "yoxlanmali" for r in S.bank["setirler"]),
                       "sual": len(BANK._sual_setirleri(S.bank)),
