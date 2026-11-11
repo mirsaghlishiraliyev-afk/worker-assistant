@@ -19,6 +19,7 @@ from . import tarixce as TR
 from . import kitabxana as KB
 from . import teklif as TK
 from .modullar import bank as BANK
+from .modullar import qebul as QB
 from . import tools as T
 from .state import HESABATLAR, YUKLEMELER, Sessiya
 
@@ -26,6 +27,7 @@ STATIC = pathlib.Path(__file__).parent / "static"
 app = FastAPI(title="Worker's Assistant")
 BASLAMA = dt.datetime.now()
 AI = llm.sec()
+QB.planlayici_baslat()  # WhatsApp API qurulubsa: qəbula yaxın xatırlatmalar
 
 # ---------------- hər istifadəçinin öz sessiyası ----------------
 # Giriş aktivdirsə, hər domen istifadəçisinin öz faylı, söhbəti və nəticələri olur (bir-birini görmürlər).

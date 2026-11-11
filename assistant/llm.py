@@ -11,6 +11,7 @@ import re
 from . import tools as T
 from .modullar import bank as BANK
 from .modullar import excel as EX
+from .modullar import qebul as QB
 
 EX_CAVAB = {
     "excel_xulase": "Faylın strukturu aşağıdadır. Hansı vərəq və ya sütunla işləyək?",
@@ -89,6 +90,12 @@ class QaydaMuherriki:
             return (f"«Yoxlanmalı daxilolmalar» bank çıxarışı üçündür, «{s.excel['ad']}» isə bank çıxarışı deyil "
                     f"(Kredit/Mədaxil və Təyinat sütunları olan vərəq tapılmadı). Bank çıxarışını «⟳ Faylı dəyiş» ilə yükləyin — "
                     f"sual avtomatik cavablandırılacaq. Bu faylda səhvləri axtarmaq üçün «Problemləri tap» yazın."), []
+
+        # Diş klinikası: qəbul jurnalı və WhatsApp mesajları (Excel sorğularından əvvəl)
+        plan = QB.qayda(s, mesaj)
+        if plan:
+            netice = et(plan[0], **plan[1])
+            return netice["metn"], hadiseler
 
         # Excel analizi: uzlaşma faylı deyilsə həmişə, uzlaşma faylıdırsa yalnız ümumi Excel sualları üçün
         ex_suali = re.search(r"sutun|struktur|\bcem|toplam|\borta|\bsay|en boyuk|en kicik|en cox|axtar|setir|problem tap|fayl haqqinda|goster|siyahi|umumi|cemi|ne qeder", n)

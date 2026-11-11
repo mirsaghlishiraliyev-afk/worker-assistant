@@ -7,6 +7,7 @@ import re
 
 from .modullar import bank as BANK
 from .modullar import excel as EX
+from .modullar import qebul as QB
 
 MAKS = 8
 
@@ -113,7 +114,7 @@ def _yoxla(s, sorgu):
         if getattr(s, "bank", None):
             return BANK.qayda(s, sorgu) is not None
         if s.excel:
-            return EX.qayda(s, sorgu) is not None
+            return QB.qayda(s, sorgu) is not None or EX.qayda(s, sorgu) is not None
     except Exception:
         return False
     return True
@@ -126,6 +127,8 @@ def hazirla(s):
             out = _bank(s)
         elif s.hazir:
             out = _uzlasma(s)
+        elif s.excel and QB._vereq(s)[1]:  # qəbul jurnalı (diş klinikası)
+            out = ["Qəbulları göstər", "Təsdiq mesajlarını hazırla", "Xatırlatmaları hazırla"] + _excel(s)
         elif s.excel:
             out = _excel(s)
         else:

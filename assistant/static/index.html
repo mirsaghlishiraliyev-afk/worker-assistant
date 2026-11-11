@@ -235,6 +235,17 @@ main.bos .hazirlar{display:none!important}  /* boş ekranda sorğular aşağıda
   .marka{letter-spacing:.16em;font-size:14px}
   header .sag .fayl-ad{display:none}
 }
+/* WhatsApp mesajları */
+.wa{display:grid;gap:8px;margin-top:6px}
+.wa-m{border:1px solid #232327;border-left:3px solid #25d366;border-radius:3px;padding:10px 12px;background:#0b0b0c}
+.wa-b{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}
+.wa-kime{font:700 9.5px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--amber)}
+.wa-tel{color:var(--muted);font-size:12.5px}
+.wa-metn{margin:6px 0 8px;white-space:pre-wrap;font-size:14px;line-height:1.5}
+.wa-a{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.wa-a small{color:var(--dim)}
+.wa-st.ok{color:var(--green)}.wa-st.no{color:var(--amber)}
+a.wa-link{background:linear-gradient(180deg,#25d366,#128c4a);border-color:#25d366;box-shadow:none}
 /* peşə seçimi (girişdən sonra bir dəfə) */
 #pesePenc{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:16px;background:rgba(0,0,0,.78)}
 #pesePenc[hidden]{display:none}
@@ -430,7 +441,7 @@ function sideAlt(r){
   $("#faylBas").textContent = ad + (r.uzlasma ? " · " + r.dovr_sonu.split("-").reverse().join(".") : "");
 }
 // Server versiyası: kod yenilənib, server köhnə qalıbsa, bu yazı köhnə versiyanı göstərir
-const UI_VERSIYA = "1.6.0";
+const UI_VERSIYA = "1.7.0";
 function versiyaCiz(r){
   let el = $("#versiya");
   if(!el){ el = document.createElement("div"); el.id = "versiya"; el.style.cssText = "font:10.5px var(--mono);color:var(--dim);padding:6px 8px 0"; $("#yan").appendChild(el); }
@@ -567,6 +578,13 @@ function mektub(u){
     <textarea>${esc(u.metn)}</textarea>
     <div class="duymeler"><button type="button" class="kicik" data-kopyala>Kopyala</button><a class="duyme" href="${mailto(u.kime, u.movzu, u.metn)}" data-mailto>E-poçtda aç</a></div></div>`;
 }
+// WhatsApp mesajları: kimə, nömrə, mətn; link (əl ilə göndərmə) və ya göndərmə vəziyyəti
+function whatsapp(u){
+  const k = u.kartlar.map(m => `<div class="wa-m"><div class="wa-b"><span class="wa-kime">${esc(m.kime)}</span><b>${esc(m.ad)}</b><span class="wa-tel">${esc(m.tel || "")}</span></div>
+    <div class="wa-metn">${esc(m.metn)}</div>
+    <div class="wa-a"><small>${esc(m.sablon)}</small>${m.link ? `<a class="duyme wa-link" href="${esc(m.link)}" target="_blank" rel="noopener">WhatsApp-da aç</a>` : `<span class="wa-st ${(m.status || "").includes("✓") || (m.status || "").startsWith("göndərilib") ? "ok" : "no"}">${esc(m.status || "")}</span>`}</div></div>`).join("");
+  return `<h4>WhatsApp · ${u.kartlar.length} mesaj</h4><div class="wa">${k}</div>` + (u.sual ? uiBlok(u.sual) : "");
+}
 function uiBlok(u){
   if(!u) return "";
   if(u.tip === "cedvel") return cedvel(u);
@@ -575,6 +593,7 @@ function uiBlok(u){
   if(u.tip === "fayl") return `<a class="duyme" href="${esc(u.url)}" download>⬇ ${esc(u.ad)}</a>`;
   if(u.tip === "fayllar") return `<div class="fayllar">${u.fayllar.map(f => `<a class="duyme" href="${esc(f.url)}" download>⬇ ${esc(f.ad)}</a>`).join(" ")}</div>`;
   if(u.tip === "kartlar") return kartlarHtml(u);
+  if(u.tip === "whatsapp") return whatsapp(u);
   if(u.tip === "sual") return `<div class="sual-v">${u.variantlar.map(v =>
     `<button type="button" class="sv ${v.esas ? "esas" : ""} ${v.ikinci ? "ikinci" : ""}" data-sual="${esc(v.mesaj)}">${esc(v.etiket)}</button>`).join("")}</div>`;
   return "";
