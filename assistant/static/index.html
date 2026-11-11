@@ -236,6 +236,26 @@ main.bos .hazirlar{display:none!important}  /* boş ekranda sorğular aşağıda
   .marka{letter-spacing:.16em;font-size:14px}
   header .sag .fayl-ad{display:none}
 }
+/* yan panelin altı: istifadəçi kartı */
+.ist{border-top:1px solid #1a1a1c;margin-top:8px;padding:12px 8px 2px;display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
+.ist-bas{display:flex;align-items:center;gap:10px;min-width:0}
+.ist-av{flex:none;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:#1a0505;border:1px solid var(--red-dim);
+  color:var(--ink);font:700 12px var(--mono);letter-spacing:.04em}
+.ist-ad{min-width:0;flex:1;display:grid;line-height:1.3}
+.ist-ad b{font-weight:600;font-size:14px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ist-ad small{font-size:11.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ist-cix{flex:none;display:grid;place-items:center;width:30px;height:30px;border-radius:3px;color:var(--muted);border:1px solid transparent}
+.ist-cix:hover{color:var(--red);border-color:var(--red-dim);background:#120303}
+.ist-pese{display:flex;align-items:flex-start;gap:8px;width:100%;padding:8px 10px;background:#0b0b0c;border:1px solid #1f1f22;border-radius:3px;
+  color:var(--ink);text-align:left;cursor:pointer;font:inherit}
+.ist-pese:hover{border-color:var(--red-dim)}
+.ist-et{flex:none;margin-top:3px;font:700 9px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--dim)}
+.ist-ciplar{flex:1;display:flex;flex-wrap:wrap;gap:4px;min-width:0}
+.ist-cip{font-size:12px;line-height:1.6;text-transform:none;letter-spacing:0;padding:0 7px;border:1px solid #2a2a2e;border-radius:2px;color:var(--ink);white-space:nowrap}
+.ist-cip.bos{color:var(--amber);border-color:#3a2a08}
+.ist-qelem{flex:none;margin-top:3px;color:var(--dim)}
+.ist-pese:hover .ist-qelem{color:var(--red)}
+.ist-ver{font:10.5px var(--mono);color:var(--dim);padding:0 2px}
 /* peşə təlimatı */
 .tl{display:grid;gap:10px;margin-top:6px}
 .tl-p{border:1px solid #232327;border-left:3px solid var(--amber);border-radius:3px;padding:12px 14px;background:#0b0b0c}
@@ -461,10 +481,10 @@ function sideAlt(r){
   $("#faylBas").textContent = ad + (r.uzlasma ? " · " + r.dovr_sonu.split("-").reverse().join(".") : "");
 }
 // Server versiyası: kod yenilənib, server köhnə qalıbsa, bu yazı köhnə versiyanı göstərir
-const UI_VERSIYA = "1.13.1";
+const UI_VERSIYA = "1.13.2";
 function versiyaCiz(r){
   let el = $("#versiya");
-  if(!el){ el = document.createElement("div"); el.id = "versiya"; el.style.cssText = "font:10.5px var(--mono);color:var(--dim);padding:6px 8px 0"; $("#yan").appendChild(el); }
+  if(!el){ el = document.createElement("div"); el.id = "versiya"; $("#yan").appendChild(el); }
   if(r.istifadeci){
     const ilk = !window.waIstifadeci;
     window.waIstifadeci = r.istifadeci;
@@ -474,11 +494,19 @@ function versiyaCiz(r){
       if($("#bos h1").textContent === kohne) basliq(BASLIQ);
     }
   }
+  // istifadəçi kartı: ad + çıxış, peşələr (basanda dəyişmək), versiya
   const u = window.waIstifadeci;
-  el.innerHTML = (u ? `<div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:4px;color:var(--text)">
-      <span title="${esc(u.login)}">👤 ${esc(u.ad)}</span><a href="/cixis" style="color:var(--red);text-decoration:none">Çıxış</a></div>` : "") +
-    `<div style="margin-bottom:4px"><a href="#" id="peseDeyis" style="color:var(--muted)">Peşələrim${pesePrf ? ": " + esc(peseAdlari().join(", ")) : ""}</a></div>` +
-    `Versiya ${esc(r.versiya || UI_VERSIYA)}` + (r.baslama ? ` · başladı ${esc(r.baslama)}` : "");
+  const bas = u ? (u.ad || u.login).split(/[\s.@_-]+/).filter(Boolean).slice(0, 2).map(x => x[0].toUpperCase()).join("") : "";
+  const peseler = peseAdlari();
+  el.className = "ist";
+  el.innerHTML = (u ? `<div class="ist-bas"><span class="ist-av" aria-hidden="true">${esc(bas)}</span>
+      <div class="ist-ad"><b title="${esc(u.ad)}">${esc(u.ad)}</b><small title="${esc(u.login)}">${esc(u.login)}</small></div>
+      <a class="ist-cix" href="/cixis" title="Çıxış" aria-label="Çıxış"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg></a></div>` : "") +
+    `<button type="button" class="ist-pese" id="peseDeyis" title="Peşəni dəyiş">
+      <span class="ist-et">Peşə</span>
+      <span class="ist-ciplar">${peseler.length ? peseler.map(a => `<span class="ist-cip">${esc(a)}</span>`).join("") : `<span class="ist-cip bos">seçilməyib</span>`}</span>
+      <svg class="ist-qelem" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>` +
+    `<div class="ist-ver">v${esc(r.versiya || UI_VERSIYA)}${r.baslama ? ` · ${esc(r.baslama)}-dan işləyir` : ""}</div>`;
 }
 // İstifadəçinin peşələrinə uyğun modullar öndə; boş ekrandakı nümunə sorğular da onlardan
 let pesePrf = null, peseSiyahisi = [], peseHelleri = [], peseEffektiv = [];
@@ -488,7 +516,7 @@ function peseModullari(){
   for(const k of (peseEffektiv.length ? peseEffektiv : pesePrf?.peseler || [])) for(const m of (peseSiyahisi.find(p => p.kod === k)?.modullar || [])) if(!out.includes(m)) out.push(m);
   return out;
 }
-document.addEventListener("click", e => { if(e.target.id === "peseDeyis"){ e.preventDefault(); peseAc(true); } });
+document.addEventListener("click", e => { if(e.target.closest("#peseDeyis")){ e.preventDefault(); peseAc(true); } });
 function modullarCiz(mods){
   const menim = peseModullari();
   // server yalnız işləyən və istifadəçinin peşəsinə aid modulları göndərir (peşənin sırası ilə)
