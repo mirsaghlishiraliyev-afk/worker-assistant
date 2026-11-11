@@ -10,6 +10,7 @@ from uzlasma.loaders import FaylXetasi
 from .modullar import bank as BANK
 from .modullar import excel as EX
 from .modullar import qebul as QB
+from .modullar import tapsiriq as TP
 from .modullar import teleb as TELEB
 
 KOK = pathlib.Path(__file__).resolve().parents[1]
@@ -22,7 +23,8 @@ EX.AYAR_FAYLI = DATA / "hesab_ayarlari.json"  # mühasibin öyrətdiyi hesab qay
 BANK.QAYDA_FAYLI = DATA / "bank_qaydalari.json"  # mühasibin bank düzəlişləri (ödəyici -> kateqoriya, maddələr)
 BANK.HESABAT_QOVLUGU = HESABATLAR
 QB.QOVLUQ = DATA / "qebul"
-TELEB.QOVLUQ = DATA / "stok"  # həkimlərin stok tələbləri (klinika üzrə ortaq)  # WhatsApp: həkim telefonları, göndərilənlər, xatırlatma planı
+TELEB.QOVLUQ = DATA / "stok"
+TP.QOVLUQ = DATA / "tapsiriq"  # tapşırıqlar, sorğular, istifadəçilər siyahısı (qurum üzrə ortaq)  # həkimlərin stok tələbləri (klinika üzrə ortaq)  # WhatsApp: həkim telefonları, göndərilənlər, xatırlatma planı
 
 
 class Sessiya:

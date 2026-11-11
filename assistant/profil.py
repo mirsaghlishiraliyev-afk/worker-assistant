@@ -137,7 +137,8 @@ def modul_siyahisi(hamisi, profil):
     kodlar = modullar(profil)
     if not kodlar:
         return aktiv
-    return sorted([m for m in aktiv if m["kod"] in kodlar], key=lambda m: kodlar.index(m["kod"]))
+    umumi = [m for m in aktiv if m.get("umumi")]  # hamıya aid (məs. Tapşırıqlar)
+    return umumi + sorted([m for m in aktiv if m["kod"] in kodlar and not m.get("umumi")], key=lambda m: kodlar.index(m["kod"]))
 
 
 def heller(profil):
@@ -229,11 +230,32 @@ TELIMATLAR = {
 }
 
 
+TAPSIRIQ_TELIMATI = {
+    "ad": "Tapşırıqlar", "giris": "Rəhbərin verdiyi tapşırıqlar sizə gəlir; icranı yazırsınız, rəhbərə sorğu göndərirsiniz.",
+    "fayl": "lazım deyil",
+    "addimlar": [
+        {"b": "Tapşırıqlarınıza baxın", "m": "Yeni tapşırıq gələndə boş ekranda «Bildiriş» kartı görünür.", "s": "Tapşırıqlarım"},
+        {"b": "İcranı yazın", "m": "«TP-001 icraya başladım», «TP-001 addım: …», «TP-001 tamamlandı». Rəhbər hər addımı görür."},
+        {"b": "Rəhbərə sorğu", "m": "«Təsdiq sorğusu: …» və ya «Məlumat sorğusu: …»; tapşırığa bağlı: «TP-001 üzrə təsdiq sorğusu: …».",
+         "s": "Sorğular"}]}
+TAPSIRIQ_TELIMATI_REHBER = {
+    "ad": "Tapşırıqlar", "giris": "İşçiyə tapşırıq və icra müddəti verir, icranı izləyir, sorğulara cavab verirsiniz.",
+    "fayl": "lazım deyil",
+    "addimlar": [
+        {"b": "Tapşırıq verin", "m": "İşçinin adı və ya e-poçtu ilə: «Aynur Məmmədovaya tapşırıq: Hesabatı hazırla, müddət 15.11» "
+                                    "(müddət: tarix, «3 gün», «sabah»)."},
+        {"b": "İcranı izləyin", "m": "Verdiyiniz tapşırıqlar — gecikənlər yuxarıda; nömrəsini yazsanız, bütün addımlar görünür.",
+         "s": "Tapşırıqlarım"},
+        {"b": "Sorğulara cavab verin", "m": "«S-001 təsdiq», «S-001 rədd», «S-001 cavab: …». Müddəti dəyişmək: «TP-001 müddət 20.11».",
+         "s": "Sorğular"}]}
+
+
 def telimat(profil):
     """Seçilmiş peşələr üçün təlimat (interfeysdə «telimat» bloku kimi göstərilir)."""
     kodlar = effektiv(profil)
     if not kodlar:
         return None
     peseler = [{"ad": next(p["ad"] for p in PESELER if p["kod"] == k), **TELIMATLAR[k]} for k in kodlar if k in TELIMATLAR]
+    peseler.append(TAPSIRIQ_TELIMATI_REHBER if "rehber" in kodlar else TAPSIRIQ_TELIMATI)  # hamıya aid modul
     return {"tip": "telimat", "peseler": peseler,
             "son": "Bu təlimatı istənilən vaxt yenidən açmaq üçün «Təlimat» yazın. Peşəni yan paneldəki «Peşələrim»dən dəyişə bilərsiniz."}

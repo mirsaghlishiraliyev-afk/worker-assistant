@@ -20,6 +20,7 @@ from . import kitabxana as KB
 from . import teklif as TK
 from .modullar import bank as BANK
 from .modullar import qebul as QB
+from .modullar import tapsiriq as TP
 from .modullar import teleb as TELEB
 from . import tools as T
 from .state import HESABATLAR, YUKLEMELER, Sessiya
@@ -73,6 +74,7 @@ async def giris_yoxla(request: Request, call_next):
             request.state.istifadeci = u
             sessiya(u["l"]).istifadeci_adi = u.get("a") or u["l"]  # salamlaşmada adla müraciət üçün
             sessiya(u["l"]).istifadeci_login = u["l"]
+            TP.qeyd_et(u["l"], u.get("a") or u["l"])  # rəhbər işçini adı ilə tapa bilsin
     return await call_next(request)
 
 
@@ -257,6 +259,7 @@ def veziyyet(request: Request = None):
             "istifadeci": {"ad": u.get("a") or u["l"], "login": u["l"]} if u else None,
             "profil": PR.al(_CARI.get()), "peseler": PR.PESELER, "heller": PR.heller(PR.al(_CARI.get())),
             "pese_effektiv": PR.effektiv(PR.al(_CARI.get())),
+            "bildiris": TP.bildirisler(_CARI.get()),  # yeni tapşırıq, gecikən, cavab gözləyən sorğu
             "sablon": S.sablon["ad"] if getattr(S, "sablon", None) else None,
             "bank": ({"daxilolma": len(S.bank["setirler"]), "yoxlanmali": sum(r["kateqoriya"] == "yoxlanmali" for r in S.bank["setirler"]),
                       "sual": len(BANK._sual_setirleri(S.bank)),
@@ -393,7 +396,7 @@ def sohbet(m: Mesaj):
         t = PR.telimat(PR.al(_CARI.get()))  # peşəyə görə təlimat (fayl lazım deyil)
         cavab = "Peşənizə görə istifadə təlimatı:" if t else "Əvvəlcə peşənizi seçin — yan paneldə «Peşələrim»."
         return {"cavab": cavab, "hadiseler": [{"alet": "telimat", "args": {}, "ui": t}] if t else []}
-    plan = TELEB.qayda(S, m.mesaj)  # stoka tələb: fayl lazım deyil
+    plan = TP.qayda(S, m.mesaj) or TELEB.qayda(S, m.mesaj)  # tapşırıqlar, sorğular, stoka tələb: fayl lazım deyil
     if plan:
         netice = T.cagir(S, plan[0], plan[1])
         S.tarixce += [{"role": "user", "content": m.mesaj}, {"role": "assistant", "content": netice["metn"]}]

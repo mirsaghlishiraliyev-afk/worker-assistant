@@ -496,7 +496,7 @@ def test_peseye_gore_telimat():
     from assistant.tools import norm
     assert set(PR.TELIMATLAR) == {p["kod"] for p in PR.PESELER}                    # hər peşənin təlimatı var
     isleyen = {norm(t["s"]) for m in AKTIV for t in m.MODUL["teklifler"]} | {norm(h["s"]) for p in PR.PESELER for h in p["heller"]}
-    for kod, t in PR.TELIMATLAR.items():
+    for kod, t in list(PR.TELIMATLAR.items()) + [("tapsiriq", PR.TAPSIRIQ_TELIMATI), ("tapsiriq_r", PR.TAPSIRIQ_TELIMATI_REHBER)]:
         assert t["giris"] and t["fayl"] and t["addimlar"], kod
         for a in t["addimlar"]:
             assert a["b"] and a["m"], kod
@@ -505,7 +505,7 @@ def test_peseye_gore_telimat():
     c = TestClient(app)
     _gir(c, "aynur", "Parol1")
     r = c.put("/api/profil", json={"peseler": ["dis_hekimi", "klinika_rehber"]}).json()
-    assert [p["ad"] for p in r["telimat"]["peseler"]] == ["Diş həkimi", "Həkim", "Diş klinikasının rəhbəri", "Rəhbər"]   # üst peşələr də
+    assert [p["ad"] for p in r["telimat"]["peseler"]] == ["Diş həkimi", "Həkim", "Diş klinikasının rəhbəri", "Rəhbər", "Tapşırıqlar"]   # üst peşələr də
     r = c.post("/api/sohbet", json={"mesaj": "Təlimat"}).json()                       # fayl yüklənməyib, yenə də açılır
     ui = r["hadiseler"][0]["ui"]
     assert ui["tip"] == "telimat" and ui["peseler"][0]["addimlar"][0]["s"] == "Stoka tələb yaz"
@@ -522,7 +522,7 @@ def test_dis_hekimi_hekimin_altindadir():
     assert "Sütunları göstər" in [h["s"] for h in hl]                                  # həkimin həlli
     assert hl[0]["pese"] == "Diş həkimi"                                              # öz həlləri əvvəl
     assert len({h["s"] for h in hl}) == len(hl)                                       # təkrarsız
-    assert [p["ad"] for p in PR.telimat(prf)["peseler"]] == ["Diş həkimi", "Həkim"]
+    assert [p["ad"] for p in PR.telimat(prf)["peseler"]] == ["Diş həkimi", "Həkim", "Tapşırıqlar"]
     assert PR.effektiv({"peseler": ["hekim"]}) == ["hekim"]                           # tərsinə deyil
     assert PR.effektiv({"peseler": ["hekim", "dis_hekimi"]}) == ["hekim", "dis_hekimi"]
     _qur()
@@ -541,7 +541,8 @@ def test_klinika_rehberi_rehberin_altindadir():
     assert PR.effektiv(prf) == ["klinika_rehber", "rehber"]
     hl = PR.heller(prf)
     assert hl[0]["pese"] == "Diş klinikasının rəhbəri" and {"Vəziyyət necədir?", "Debitor borcları göstər"} <= {h["s"] for h in hl}
-    assert [p["ad"] for p in PR.telimat(prf)["peseler"]] == ["Diş klinikasının rəhbəri", "Rəhbər"]
+    assert [p["ad"] for p in PR.telimat(prf)["peseler"]] == ["Diş klinikasının rəhbəri", "Rəhbər", "Tapşırıqlar"]
+    assert PR.telimat(prf)["peseler"][-1]["addimlar"][0]["b"] == "Tapşırıq verin"                # rəhbər variantı
     assert PR.effektiv({"peseler": ["rehber"]}) == ["rehber"]                         # adi rəhbər klinika rəhbəri olmur
     _qur()
     c = TestClient(app)
@@ -566,13 +567,13 @@ def test_modullar_peseye_aiddir():
     hamisi = [m["kod"] for m in PR.modul_siyahisi(T.modullar(), None)]
     assert {"bank", "qebul", "stok"} <= set(hamisi) and "muqavile" not in hamisi      # peşə yoxdur: bütün işləyənlər
     c.put("/api/profil", json={"peseler": ["muhasib"]})
-    assert kodlar() == ["bank", "muhasibat", "excel"]
+    assert kodlar() == ["tapsiriq", "bank", "muhasibat", "excel"]                     # «Tapşırıqlar» hamıya aiddir
     c.put("/api/profil", json={"peseler": ["dis_hekimi"]})
-    assert kodlar() == ["qebul", "teleb", "excel"]                                   # həkimdən excel gəlir, bank yoxdur
+    assert kodlar() == ["tapsiriq", "qebul", "teleb", "excel"]                                   # həkimdən excel gəlir, bank yoxdur
     c.put("/api/profil", json={"peseler": ["huquq"]})
-    assert kodlar() == ["excel"]                                                     # «Müqavilələr» hələ işləmir
+    assert kodlar() == ["tapsiriq", "excel"]                                                     # «Müqavilələr» hələ işləmir
     c.put("/api/profil", json={"peseler": ["klinika_rehber"]})
-    assert kodlar() == ["qebul", "stok", "teleb", "excel", "bank", "muhasibat"]      # rəhbərdən bank, mühasibat
+    assert kodlar() == ["tapsiriq", "qebul", "stok", "teleb", "excel", "bank", "muhasibat"]      # rəhbərdən bank, mühasibat
 
 
 def test_veziyyet_versiyani_qaytarir():
@@ -585,3 +586,29 @@ def test_veziyyet_versiyani_qaytarir():
     assert v["versiya"] == __version__ and v["baslama"] and v["modullar"]
     html = c.get("/").text
     assert f'const UI_VERSIYA = "{__version__}";' in html                            # interfeys və server eyni versiyada
+
+
+def test_rehber_tapsiriq_verir_isci_icra_edir():
+    """Uçdan-uca: rəhbər işçini adı ilə tapır, tapşırıq və müddət verir; işçi icra edir, sorğu göndərir; rəhbər izləyir."""
+    _qur()
+    rehber, isci = TestClient(app), TestClient(app)
+    _gir(rehber, "resad", "Parol2")
+    _gir(isci, "aynur", "Parol1")
+    rehber.put("/api/profil", json={"peseler": ["rehber"]})
+    isci.put("/api/profil", json={"peseler": ["muhasib"]})
+    isci.get("/api/veziyyet")                                                      # işçi sistemə girib — siyahıdadır
+    sohbet = lambda c, m: c.post("/api/sohbet", json={"mesaj": m}).json()  # noqa: E731
+    r = sohbet(rehber, "Aynur Məmmədovaya tapşırıq: Bank çıxarışını yoxla, müddət 3 gün")
+    assert "verildi: Aynur Məmmədova" in r["cavab"] and "fayl lazımdır" not in r["cavab"]
+    no = r["cavab"].split("Tapşırıq ")[1].split(" ")[0]
+    assert isci.get("/api/veziyyet").json()["bildiris"]["yeni"] >= 1                # işçiyə bildiriş
+    assert "Rəhbər" in sohbet(isci, "Rəşada tapşırıq: test")["cavab"]               # mühasib tapşırıq verə bilmir
+    sohbet(isci, f"{no} icraya başladım")
+    r = sohbet(isci, f"{no} üzrə məlumat sorğusu: hansı aya aiddir?")
+    sno = r["cavab"].split("sorğusu ")[1].split(" ")[0]
+    assert rehber.get("/api/veziyyet").json()["bildiris"]["sorgu"] >= 1
+    sohbet(rehber, f"{sno} cavab: oktyabr")
+    sohbet(isci, f"{no} tamamlandı")
+    r = sohbet(rehber, no)
+    addimlar = [a[2] for a in r["hadiseler"][0]["ui"]["bloklar"][1]["setirler"]]
+    assert addimlar[-3:] == [f"Məlumat sorğusu {sno}: hansı aya aiddir?", f"{sno} — cavablandı: oktyabr", "Tamamlandı"]

@@ -256,6 +256,7 @@ main.bos .hazirlar{display:none!important}  /* boş ekranda sorğular aşağıda
 .ist-qelem{flex:none;margin-top:3px;color:var(--dim)}
 .ist-pese:hover .ist-qelem{color:var(--red)}
 .ist-ver{font:10.5px var(--mono);color:var(--dim);padding:0 2px}
+.teklif.bild{border-color:#3a2a08}.teklif.bild::before{background:var(--amber)}
 /* peşə təlimatı */
 .tl{display:grid;gap:10px;margin-top:6px}
 .tl-p{border:1px solid #232327;border-left:3px solid var(--amber);border-radius:3px;padding:12px 14px;background:#0b0b0c}
@@ -481,7 +482,7 @@ function sideAlt(r){
   $("#faylBas").textContent = ad + (r.uzlasma ? " · " + r.dovr_sonu.split("-").reverse().join(".") : "");
 }
 // Server versiyası: kod yenilənib, server köhnə qalıbsa, bu yazı köhnə versiyanı göstərir
-const UI_VERSIYA = "1.13.2";
+const UI_VERSIYA = "1.14.0";
 function versiyaCiz(r){
   let el = $("#versiya");
   if(!el){ el = document.createElement("div"); el.id = "versiya"; $("#yan").appendChild(el); }
@@ -523,12 +524,18 @@ function modullarCiz(mods){
   mods = (mods || []).filter(m => m.status === "aktiv");
   $("#modullar").innerHTML = mods.map(m => `<div class="mod ${menim.includes(m.kod) ? "menim" : ""}" title="${esc(m.tesvir)}">
     <span class="nq"></span>${esc(m.ad)}</div>`).join("");
+  // bildirişlər (yeni tapşırıq, gecikən, cavab gözləyən sorğu) — kartların ən əvvəlində
+  const b = window.waBildiris || {};
+  const bild = [b.yeni ? ["Tapşırıqlarım", `Yeni tapşırıq: ${b.yeni}`, "baxın və icraya başlayın"] : null,
+                b.gecikir ? ["Tapşırıqlarım", `Gecikən tapşırıq: ${b.gecikir}`, "müddəti keçib"] : null,
+                b.sorgu ? ["Sorğular", `Cavab gözləyən sorğu: ${b.sorgu}`, "təsdiq edin və ya cavab yazın"] : null]
+    .filter(Boolean).map(([s, ba, a]) => `<button class="teklif bild" data-s="${esc(s)}"><span class="modad">Bildiriş</span><b>${esc(ba)}</b><span>${esc(a)}</span></button>`).join("");
   // peşə seçilibsə: peşəyə görə hazır həllər; yoxsa — modulların nümunələri
   if(peseHelleri.length){
-    modulKartlari = peseHelleri.map(h => `<button class="teklif" data-s="${esc(h.s)}"><span class="modad">${esc(h.pese)}</span><b>${esc(h.b)}</b><span>${esc(h.a)}</span></button>`).join("");
+    modulKartlari = bild + peseHelleri.map(h => `<button class="teklif" data-s="${esc(h.s)}"><span class="modad">${esc(h.pese)}</span><b>${esc(h.b)}</b><span>${esc(h.a)}</span></button>`).join("");
     kartlariCiz(); return;
   }
-  modulKartlari = mods.filter(m => m.status === "aktiv").flatMap(m => (m.teklifler || []).map(t =>
+  modulKartlari = bild + mods.filter(m => m.status === "aktiv").flatMap(m => (m.teklifler || []).map(t =>
     `<button class="teklif" data-s="${esc(t.s)}"><span class="modad">${esc(m.ad)}</span><b>${esc(t.b)}</b><span>${esc(t.a)}</span></button>`)).join("");
   kartlariCiz();
 }
@@ -555,6 +562,7 @@ async function veziyyet(){
   const el = $("#rejim"), kod = r.rejim_kod || "qayda";
   el.className = "rejim " + kod; el.dataset.tip = r.rejim; el.setAttribute("aria-label", r.rejim);
   el.innerHTML = REJIM_IKON[kod] || REJIM_IKON.qayda;
+  window.waBildiris = r.bildiris || {};
   pesePrf = r.profil || null; peseSiyahisi = r.peseler || []; peseHelleri = r.heller || []; peseEffektiv = r.pese_effektiv || [];
   sideAlt(r); modullarCiz(r.modullar); versiyaCiz(r); peseBasliq();
   if(!r.profil && !window.peseSoruldu){ window.peseSoruldu = true; peseAc(false); }  // peşə seçilməyib: soruş
