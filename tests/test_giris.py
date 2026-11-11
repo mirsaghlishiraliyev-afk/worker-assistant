@@ -340,3 +340,68 @@ def test_tekrar_yukleme_ve_ustune_yazma():
     assert len([f for f in a.get("/api/fayllar").json() if f["ad"] == "cixaris.xlsx"]) == 2
     fid = a.get("/api/fayllar").json()[0]["id"]
     assert a.delete(f"/api/fayllar/{fid}").status_code == 200
+
+
+# ---------------- Gmail (Google ilə daxil ol) ----------------
+def _google(monkeypatch, siyahi="test.istifadeci@gmail.com"):
+    _qur()
+    monkeypatch.setattr(G, "GOOGLE_ID", "test-id.apps.googleusercontent.com")
+    monkeypatch.setattr(G, "GOOGLE_SECRET", "sirr")
+    monkeypatch.setattr(G, "GOOGLE_REDIRECT", "")
+    monkeypatch.setenv("WA_ICAZELI", siyahi)
+
+
+def _iddia(**x):
+    return {"aud": G.GOOGLE_ID, "iss": "https://accounts.google.com", "exp": time.time() + 600,
+            "email": "Test.Istifadeci@gmail.com", "email_verified": True, "name": "Test İstifadəçi", **x}
+
+
+def test_giris_secimi_outlook_ve_gmail(monkeypatch):
+    _google(monkeypatch)
+    t = TestClient(app).get("/giris").text
+    assert 'data-u="outlook"' in t and 'data-u="gmail"' in t                  # iki seçim
+    assert 'action="/giris"' in t and 'href="/giris/google"' in t
+    monkeypatch.setattr(G, "LDAP_URL", "")                                      # yalnız Gmail qurulub: seçim yoxdur
+    monkeypatch.setattr(G, "IMAP_HOST", "")
+    t = TestClient(app).get("/giris").text
+    assert 'data-u="outlook"' not in t and 'action="/giris"' not in t and "Google ilə daxil ol" in t
+
+
+def test_gmail_giris_axini(monkeypatch):
+    from urllib.parse import parse_qs, urlparse
+    _google(monkeypatch)
+    alinan = {}
+
+    def sahte(kod, verifier, redirect):
+        alinan.update(kod=kod, verifier=verifier, redirect=redirect)
+        return G.google_iddia_yoxla(_iddia())
+    monkeypatch.setattr(G, "GOOGLE_YOXLAYICI", sahte)
+    c = TestClient(app)
+    r = c.get("/giris/google", follow_redirects=False)
+    u = urlparse(r.headers["location"])
+    q = {k: v[0] for k, v in parse_qs(u.query).items()}
+    assert u.netloc == "accounts.google.com" and q["client_id"] == G.GOOGLE_ID
+    assert q["code_challenge_method"] == "S256" and q["redirect_uri"] == "http://testserver/giris/google/geri"
+    assert c.get("/giris/google/geri", params={"code": "k", "state": "basqa"}, follow_redirects=False).status_code == 400  # saxta state
+    r = c.get("/giris/google", follow_redirects=False)
+    state = parse_qs(urlparse(r.headers["location"]).query)["state"][0]
+    r = c.get("/giris/google/geri", params={"code": "kod1", "state": state}, follow_redirects=False)
+    assert r.status_code == 303 and G.KUKI in r.cookies
+    assert alinan["kod"] == "kod1" and alinan["redirect"] == "http://testserver/giris/google/geri"
+    v = c.get("/api/veziyyet").json()
+    assert v["istifadeci"]["login"] == "test.istifadeci@gmail.com"
+
+
+def test_gmail_icaze_yoxlamasi(monkeypatch):
+    import pytest
+    _google(monkeypatch)
+    assert G.google_iddia_yoxla(_iddia())["ad"] == "Test İstifadəçi"
+    with pytest.raises(G.GirisXetasi, match="icazəsi yoxdur"):
+        G.google_iddia_yoxla(_iddia(email="yad@gmail.com"))                    # siyahıda deyil
+    with pytest.raises(G.GirisXetasi, match="təsdiqlənməyib"):
+        G.google_iddia_yoxla(_iddia(email_verified=False))
+    with pytest.raises(G.GirisXetasi, match="yoxlanmadı"):
+        G.google_iddia_yoxla(_iddia(aud="basqa-musteri"))                       # başqa tətbiqin tokeni
+    monkeypatch.setenv("WA_ICAZELI", "")
+    with pytest.raises(G.GirisXetasi, match="siyahısı qurulmayıb"):            # siyahısız Gmail girişi bağlıdır
+        G.google_iddia_yoxla(_iddia())

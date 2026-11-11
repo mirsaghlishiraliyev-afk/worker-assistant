@@ -22,6 +22,15 @@ IMAP üçün mühit dəyişənləri:
   İcazəli siyahı  - (istəyə bağlı) WA_ICAZELI="a@asf.gov.az,b@asf.gov.az" və/və ya WA_DATA/icazeli_istifadeciler.txt
                     (hər sətirdə bir ünvan). Siyahı varsa, yalnız ondakılar girə bilər.
 
+Gmail (Google ilə daxil ol, OAuth) üçün mühit dəyişənləri:
+  WA_GOOGLE_CLIENT_ID     - Google Cloud Console → APIs & Services → Credentials → «OAuth client ID» (Web application)
+  WA_GOOGLE_CLIENT_SECRET - həmin müştərinin sirri (Docker secret «wa_google_secret» də olar)
+  WA_GOOGLE_REDIRECT      - (istəyə bağlı) geri dönüş ünvanı; verilməsə sorğudan qurulur: <ünvan>/giris/google/geri.
+                            Bu ünvan Google Console-da «Authorized redirect URIs»-ə yazılmalıdır.
+  Gmail parolu bu sistemə heç vaxt gəlmir: istifadəçi Google-un öz səhifəsində daxil olur.
+  Gmail ünvanları yalnız icazəli siyahıda olanda girə bilər (WA_ICAZELI və ya icazeli_istifadeciler.txt);
+  siyahı boşdursa, Gmail ilə giriş bağlıdır (real maliyyə məlumatı hər Google hesabına açılmasın).
+
 Active Directory üçün mühit dəyişənləri:
   WA_LDAP_URL     - domen serveri, məs. ldaps://dc01.asf.gov.az:636 (ldap://...:389 olsa, StartTLS istifadə olunur)
   WA_LDAP_DOMEN   - istifadəçi adının domeni, məs. asf.gov.az  ("ad" -> ad@asf.gov.az; "ASF\\ad" və "ad@..." də olar)
@@ -73,13 +82,24 @@ IMAP_SERT_ADI = _env("WA_IMAP_SERT_ADI").lower()
 IMAP_PINLER = {p for p in (re.sub(r"[^0-9a-f]", "", x.lower().replace("sha256 fingerprint=", ""))
                            for x in _env("WA_IMAP_PIN").split(",")) if p}
 IMAP_PIN = bool(IMAP_PINLER)
+GOOGLE_ID = _env("WA_GOOGLE_CLIENT_ID")
+GOOGLE_SECRET = _secret("/run/secrets/wa_google_secret", "WA_GOOGLE_CLIENT_SECRET")
+GOOGLE_REDIRECT = _env("WA_GOOGLE_REDIRECT")
 SESSIYA_SAAT = float(_env("WA_SESSIYA_SAAT", "8") or 8)
 ACAR = (_secret("/run/secrets/wa_sessiya_acari", "WA_SESSIYA_ACARI") or secrets.token_hex(32)).encode()
 
 
 def aktiv():
-    """Giriş tələb olunurmu (poçt və ya domen serveri təyin edilibsə)."""
+    """Giriş tələb olunurmu (poçt, domen serveri və ya Google təyin edilibsə)."""
+    return bool(IMAP_HOST or LDAP_URL or GOOGLE_ID)
+
+
+def outlook_aktiv():
     return bool(IMAP_HOST or LDAP_URL)
+
+
+def google_aktiv():
+    return bool(GOOGLE_ID and GOOGLE_SECRET)
 
 
 def icazeli_siyahi():
@@ -253,6 +273,71 @@ def yoxla(login, parol):
 YOXLAYICI = yoxla  # testlərdə əvəz olunur
 
 
+# ---------------- Gmail: Google ilə daxil ol (OAuth 2.0, PKCE) ----------------
+GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN = "https://oauth2.googleapis.com/token"
+OAUTH_KUKI = "wa_oauth"
+
+
+def google_basla(redirect):
+    """Google-a yönləndirmə ünvanı və müvəqqəti kuki (state + PKCE verifier, imzalı, 10 dəqiqə)."""
+    from urllib.parse import urlencode
+    state, verifier = secrets.token_urlsafe(24), secrets.token_urlsafe(48)
+    challenge = _b64(hashlib.sha256(verifier.encode()).digest())
+    url = GOOGLE_AUTH + "?" + urlencode({
+        "client_id": GOOGLE_ID, "redirect_uri": redirect, "response_type": "code", "scope": "openid email profile",
+        "state": state, "code_challenge": challenge, "code_challenge_method": "S256", "prompt": "select_account"})
+    return url, _imzala({"s": state, "v": verifier, "r": redirect, "exp": int(time.time() + 600)})
+
+
+def google_kuki_oxu(deyer, state):
+    """Geri dönüşdə: kukidəki state Google-un qaytardığı ilə eynidirsə (verifier, redirect); deyilsə None."""
+    d = _imza_oxu(deyer)
+    if not d or d.get("exp", 0) < time.time() or not state or not hmac.compare_digest(d.get("s", ""), state):
+        return None
+    return d["v"], d["r"]
+
+
+def google_iddia_yoxla(iddia):
+    """id_token-dakı məlumat: düzgün müştəri, təsdiqlənmiş e-poçt, icazəli siyahı. Uğurlu: istifadəçi; yoxsa GirisXetasi."""
+    if iddia.get("aud") != GOOGLE_ID or iddia.get("iss") not in ("https://accounts.google.com", "accounts.google.com") \
+            or iddia.get("exp", 0) < time.time():
+        raise GirisXetasi("Google cavabı yoxlanmadı. Yenidən cəhd edin.")
+    mail = str(iddia.get("email", "")).strip().lower()
+    if not mail or iddia.get("email_verified") not in (True, "true"):
+        raise GirisXetasi("Google hesabının e-poçtu təsdiqlənməyib.")
+    siyahi = icazeli_siyahi()
+    if not siyahi:
+        raise GirisXetasi("Gmail ilə giriş üçün icazəli istifadəçilər siyahısı qurulmayıb. Administratora müraciət edin.")
+    if mail not in siyahi:
+        raise GirisXetasi(f"{mail} ünvanının bu sistemə giriş icazəsi yoxdur. Administratora müraciət edin.")
+    yerli = mail.split("@")[0]
+    ad = iddia.get("name") or " ".join(h.capitalize() for h in re.split(r"[._\-]+", yerli) if h)
+    return {"login": mail, "ad": ad or mail, "mail": mail}
+
+
+def google_yoxla(kod, verifier, redirect):
+    """Google-dan alınan kodu tokenə dəyişir. id_token birbaşa Google-un token ünvanından (HTTPS) gəlir,
+    ona görə imzasız oxumaq olar (Google sənədləri); sahələr yenə də yoxlanır."""
+    import httpx
+    try:
+        r = httpx.post(GOOGLE_TOKEN, data={"code": kod, "client_id": GOOGLE_ID, "client_secret": GOOGLE_SECRET,
+                                           "redirect_uri": redirect, "grant_type": "authorization_code",
+                                           "code_verifier": verifier}, timeout=10)
+    except httpx.HTTPError as x:
+        raise GirisXetasi(f"Google ilə əlaqə alınmadı ({type(x).__name__})")
+    if r.status_code != 200 or "id_token" not in r.json():
+        raise GirisXetasi("Google girişi təsdiqlənmədi. Yenidən cəhd edin.")
+    try:
+        iddia = json.loads(_b64d(r.json()["id_token"].split(".")[1]))
+    except (ValueError, IndexError):
+        raise GirisXetasi("Google cavabı oxunmadı.")
+    return google_iddia_yoxla(iddia)
+
+
+GOOGLE_YOXLAYICI = google_yoxla  # testlərdə əvəz olunur
+
+
 # ---------------- kuki ----------------
 def _b64(b):
     return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
@@ -262,22 +347,28 @@ def _b64d(s):
     return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
 
 
-def kuki_yarat(istifadeci):
-    yuk = _b64(json.dumps({"l": istifadeci["login"], "a": istifadeci.get("ad", ""),
-                           "exp": int(time.time() + SESSIYA_SAAT * 3600)}, ensure_ascii=False).encode())
-    imza = _b64(hmac.new(ACAR, yuk.encode(), hashlib.sha256).digest())
-    return f"{yuk}.{imza}"
+def _imzala(d):
+    yuk = _b64(json.dumps(d, ensure_ascii=False).encode())
+    return f"{yuk}.{_b64(hmac.new(ACAR, yuk.encode(), hashlib.sha256).digest())}"
 
 
-def kuki_oxu(deyer):
+def _imza_oxu(deyer):
     try:
         yuk, imza = (deyer or "").split(".", 1)
         if not hmac.compare_digest(imza, _b64(hmac.new(ACAR, yuk.encode(), hashlib.sha256).digest())):
             return None
-        d = json.loads(_b64d(yuk))
-        return d if d.get("exp", 0) > time.time() and d.get("l") else None
+        return json.loads(_b64d(yuk))
     except (ValueError, json.JSONDecodeError):
         return None
+
+
+def kuki_yarat(istifadeci):
+    return _imzala({"l": istifadeci["login"], "a": istifadeci.get("ad", ""), "exp": int(time.time() + SESSIYA_SAAT * 3600)})
+
+
+def kuki_oxu(deyer):
+    d = _imza_oxu(deyer)
+    return d if isinstance(d, dict) and d.get("exp", 0) > time.time() and d.get("l") else None
 
 
 # ---------------- parol təxmininə qarşı ----------------
@@ -303,8 +394,19 @@ def ugurlu(acar):
 
 
 # ---------------- giriş səhifəsi ----------------
-def sehife(xeta="", login=""):
+def sehife(xeta="", login="", usul=""):
+    """Giriş səhifəsi: Outlook (şirkət poçtu) və ya Gmail seçimi. Yalnız qurulmuş üsullar göstərilir."""
     from html import escape
+    ol, gm = outlook_aktiv(), google_aktiv()
+    usul = usul if usul in ("outlook", "gmail") else ("outlook" if ol else "gmail")
+    secim = (f'''<div class="secim" role="tablist">
+<button type="button" role="tab" data-u="outlook" aria-selected="{str(usul == 'outlook').lower()}">Outlook</button>
+<button type="button" role="tab" lang="en" data-u="gmail" aria-selected="{str(usul == 'gmail').lower()}">Gmail</button></div>'''
+             if ol and gm else "")
+    gmail = f'''<div class="usul" id="u-gmail"{'' if usul == 'gmail' else ' hidden'}>
+<p class="izah">Google hesabınızla daxil olun. Parolu Google-un öz səhifəsində yazırsınız — bu sistemə gəlmir.</p>
+<a class="google" href="/giris/google"><svg viewBox="0 0 48 48" width="18" height="18" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>Google ilə daxil ol</a>
+</div>''' if gm else ""
     return f"""<!doctype html><html lang="az"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Worker's Assistant — giriş</title>
 <link rel="icon" href="/static/favicon.svg?v=boz">
@@ -325,15 +427,33 @@ input:focus{{outline:none;border-color:var(--red);box-shadow:0 0 8px rgba(255,40
 button{{width:100%;margin-top:20px;padding:11px;background:#1a0505;border:1px solid var(--red);color:#fff;border-radius:2px;
 font:700 12px ui-monospace,monospace;letter-spacing:.2em;text-transform:uppercase;cursor:pointer}}
 button:hover{{background:#2a0808;box-shadow:0 0 12px rgba(255,40,40,.45)}}
+.secim{{display:grid;grid-template-columns:1fr 1fr;gap:0;margin:0 0 16px;border:1px solid #2a2a2e;border-radius:2px}}
+.secim button{{margin:0;padding:9px;background:transparent;border:0;color:var(--muted);letter-spacing:.14em}}
+.secim button[aria-selected=true]{{background:#1a0505;color:#fff;box-shadow:inset 0 -2px 0 var(--red)}}
+.secim button:hover{{box-shadow:inset 0 -2px 0 var(--red)}}
+a.google{{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:8px;padding:11px;background:#fff;color:#1f1f1f;
+border-radius:2px;text-decoration:none;font-weight:600;font-size:14px}}
+a.google:hover{{box-shadow:0 0 12px rgba(255,255,255,.25)}}
 .xeta{{margin-top:14px;padding:9px 11px;border:1px solid #5a0a0a;background:#160303;color:#ff8a80;font-size:13px;border-radius:2px}}
-</style></head><body><form class="kart" method="post" action="/giris" autocomplete="on">
+</style></head><body><div class="kart">
 <div class="bas"><img src="/static/logo.svg" alt=""><h1 lang="en">Worker's Assistant</h1></div>
 <div class="skaner"></div>
+{secim}
+{f'''<form class="usul" id="u-outlook" method="post" action="/giris" autocomplete="on"{'' if usul == 'outlook' else ' hidden'}>
 <p class="izah">Şirkət e-poçtunuzla daxil olun — Outlook-a yazdığınız ünvan və parol.</p>
 <label for="l">E-poçt ünvanı</label>
-<input id="l" name="login" value="{escape(login)}" placeholder="ad.soyad@{escape((IMAP_DOMENLER or [DOMEN or 'asf.gov.az'])[0])}" autocomplete="username" required autofocus>
+<input id="l" name="login" value="{escape(login)}" placeholder="ad.soyad@{escape((IMAP_DOMENLER or [DOMEN or 'asf.gov.az'])[0])}" autocomplete="username" required>
 <label for="p">Parol</label>
 <input id="p" name="parol" type="password" autocomplete="current-password" required>
 <button type="submit">Daxil ol</button>
+</form>''' if ol else ""}
+{gmail}
 {f'<div class="xeta">{escape(xeta)}</div>' if xeta else ''}
-</form></body></html>"""
+</div>
+<script>
+document.querySelectorAll(".secim button").forEach(b => b.onclick = () => {{
+  document.querySelectorAll(".secim button").forEach(x => x.setAttribute("aria-selected", x === b));
+  document.querySelectorAll(".usul").forEach(u => u.hidden = u.id !== "u-" + b.dataset.u);
+  const l = document.getElementById("l"); if(b.dataset.u === "outlook" && l) l.focus();
+}});
+</script></body></html>"""

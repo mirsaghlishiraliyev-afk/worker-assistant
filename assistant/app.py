@@ -53,7 +53,7 @@ class _Proksi:
 S = _Proksi()
 
 # ---------------- giriş (şirkət e-poçtu: IMAP mail.gov.az və ya domen) ----------------
-ACIQ = {"/saglamliq", "/giris", "/static/logo.svg", "/static/favicon.svg"}
+ACIQ = {"/saglamliq", "/giris", "/giris/google", "/giris/google/geri", "/static/logo.svg", "/static/favicon.svg"}
 
 
 @app.middleware("http")
@@ -90,6 +90,8 @@ def giris_et(request: Request, login: str = Form(""), parol: str = Form("")):
     acar = f"{(login or '').strip().lower()}|{request.client.host if request.client else ''}"
     if G.bloklanib(acar):
         return HTMLResponse(G.sehife("Çox sayda uğursuz cəhd. 10 dəqiqə sonra yenidən yoxlayın.", login), status_code=429)
+    if not G.outlook_aktiv():
+        return RedirectResponse("/giris", status_code=303)
     try:
         u = G.YOXLAYICI(login, parol)
     except G.GirisXetasi as x:
@@ -98,9 +100,59 @@ def giris_et(request: Request, login: str = Form(""), parol: str = Form("")):
         G.ugursuz(acar)
         return HTMLResponse(G.sehife("İstifadəçi adı və ya parol səhvdir.", login), status_code=401)
     G.ugurlu(acar)
+    return _daxil_et(request, u)
+
+
+def _daxil_et(request, u):
     r = RedirectResponse("/", status_code=303)
     r.set_cookie(G.KUKI, G.kuki_yarat(u), max_age=int(G.SESSIYA_SAAT * 3600), httponly=True,
                  samesite="lax", secure=_https(request), path="/")
+    return r
+
+
+def _google_geri_unvan(request):
+    if G.GOOGLE_REDIRECT:
+        return G.GOOGLE_REDIRECT
+    sxem = "https" if _https(request) else request.url.scheme
+    return f"{sxem}://{request.headers.get('host', request.url.netloc)}/giris/google/geri"
+
+
+@app.get("/giris/google")
+def google_giris(request: Request):
+    """Gmail: Google-un giriş səhifəsinə yönləndirir (parol bu sistemə gəlmir)."""
+    if not G.google_aktiv():
+        return RedirectResponse("/giris", status_code=303)
+    url, kuki = G.google_basla(_google_geri_unvan(request))
+    r = RedirectResponse(url, status_code=303)
+    r.set_cookie(G.OAUTH_KUKI, kuki, max_age=600, httponly=True, samesite="lax", secure=_https(request), path="/giris/google")
+    return r
+
+
+@app.get("/giris/google/geri")
+def google_geri(request: Request, code: str = "", state: str = "", error: str = ""):
+    if not G.google_aktiv():
+        return RedirectResponse("/giris", status_code=303)
+
+    def xeta(m, kod=400):
+        r = HTMLResponse(G.sehife(m, usul="gmail"), status_code=kod)
+        r.delete_cookie(G.OAUTH_KUKI, path="/giris/google")
+        return r
+    if error:
+        return xeta("Google ilə giriş ləğv olundu." if error == "access_denied" else f"Google girişi alınmadı ({error}).")
+    d = G.google_kuki_oxu(request.cookies.get(G.OAUTH_KUKI), state)
+    if not d or not code:
+        return xeta("Giriş sessiyası köhnəlib və ya yanlışdır. «Google ilə daxil ol»-u yenidən basın.")
+    acar = f"google|{request.client.host if request.client else ''}"
+    if G.bloklanib(acar):
+        return xeta("Çox sayda uğursuz cəhd. 10 dəqiqə sonra yenidən yoxlayın.", 429)
+    try:
+        u = G.GOOGLE_YOXLAYICI(code, *d)
+    except G.GirisXetasi as x:
+        G.ugursuz(acar)
+        return xeta(str(x), 403)
+    G.ugurlu(acar)
+    r = _daxil_et(request, u)
+    r.delete_cookie(G.OAUTH_KUKI, path="/giris/google")
     return r
 
 

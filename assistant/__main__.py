@@ -4,7 +4,8 @@ Mühit dəyişənləri:
   WA_HOST   - dinlənən ünvan (susmaya görə 127.0.0.1 — yalnız bu kompüter; Docker-də 0.0.0.0)
   WA_PORT   - port (8000)
   WA_RELOAD - 1: kod dəyişəndə server özü yenidən başlayır (yalnız inkişaf zamanı)
-  WA_IMAP_HOST, WA_IMAP_DOMEN (və ya WA_LDAP_*) - şəbəkəyə açılanda e-poçt hesabı ilə giriş; bax: assistant/giris.py.
+  WA_IMAP_HOST, WA_IMAP_DOMEN (və ya WA_LDAP_*) - şəbəkəyə açılanda Outlook (şirkət poçtu) ilə giriş;
+  WA_GOOGLE_CLIENT_ID, WA_GOOGLE_CLIENT_SECRET - Gmail ilə giriş (Google ilə daxil ol); bax: assistant/giris.py.
                 0.0.0.0-da giriş qurulmadan server işə düşmür.
 """
 import os
