@@ -130,6 +130,16 @@ def modullar(profil):
     return out
 
 
+def modul_siyahisi(hamisi, profil):
+    """Yan paneldəki modullar: yalnız işləyənlər; peşə seçilibsə — yalnız peşəyə (üst peşələr daxil) aid olanlar,
+    peşənin sırası ilə. Peşə seçilməyibsə — bütün işləyən modullar."""
+    aktiv = [m for m in hamisi if m.get("status") == "aktiv"]
+    kodlar = modullar(profil)
+    if not kodlar:
+        return aktiv
+    return sorted([m for m in aktiv if m["kod"] in kodlar], key=lambda m: kodlar.index(m["kod"]))
+
+
 def heller(profil):
     """İstifadəçiyə peşəsinə görə hazır həllər (bir neçə peşə: hər birindən, təkrarsız)."""
     out, gorulen = [], set()

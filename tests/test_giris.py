@@ -553,3 +553,23 @@ def test_klinika_rehberi_rehberin_altindadir():
     assert not TELEB.rehberdir(S())                                                  # tələbləri yalnız klinika rəhbəri təsdiq edir
     c.put("/api/profil", json={"peseler": ["klinika_rehber"]})
     assert TELEB.rehberdir(S())
+
+
+def test_modullar_peseye_aiddir():
+    """Yan paneldə yalnız istifadəçinin peşəsinə aid işləyən modullar görünür."""
+    _qur()
+    c = TestClient(app)
+    _gir(c, "aynur", "Parol1")
+    kodlar = lambda: [m["kod"] for m in c.get("/api/veziyyet").json()["modullar"]]  # noqa: E731
+    from assistant import profil as PR
+    from assistant import tools as T
+    hamisi = [m["kod"] for m in PR.modul_siyahisi(T.modullar(), None)]
+    assert {"bank", "qebul", "stok"} <= set(hamisi) and "muqavile" not in hamisi      # peşə yoxdur: bütün işləyənlər
+    c.put("/api/profil", json={"peseler": ["muhasib"]})
+    assert kodlar() == ["bank", "muhasibat", "excel"]
+    c.put("/api/profil", json={"peseler": ["dis_hekimi"]})
+    assert kodlar() == ["qebul", "teleb", "excel"]                                   # həkimdən excel gəlir, bank yoxdur
+    c.put("/api/profil", json={"peseler": ["huquq"]})
+    assert kodlar() == ["excel"]                                                     # «Müqavilələr» hələ işləmir
+    c.put("/api/profil", json={"peseler": ["klinika_rehber"]})
+    assert kodlar() == ["qebul", "stok", "teleb", "excel", "bank", "muhasibat"]      # rəhbərdən bank, mühasibat
