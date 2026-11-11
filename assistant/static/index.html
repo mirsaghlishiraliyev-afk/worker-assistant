@@ -257,6 +257,14 @@ main.bos .hazirlar{display:none!important}  /* boş ekranda sorğular aşağıda
 .ist-pese:hover .ist-qelem{color:var(--red)}
 .ist-ver{font:10.5px var(--mono);color:var(--dim);padding:0 2px}
 .teklif.bild{border-color:#3a2a08}.teklif.bild::before{background:var(--amber)}
+/* söhbətdə fayl istinadı */
+.msj.fref{display:flex;justify-content:center;margin:6px 0}
+.fref-q{display:flex;flex-wrap:wrap;align-items:center;gap:6px;max-width:100%}
+.fref-f{display:inline-flex;align-items:center;gap:8px;max-width:100%;padding:5px 6px 5px 10px;border:1px solid #232327;border-radius:3px;background:#0b0b0c;font-size:13px}
+.fref-f b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.fref-ac{flex:none;padding:2px 9px;background:transparent;border:1px solid #2a2a2e;border-radius:2px;color:var(--muted);font-size:12px;cursor:pointer}
+.fref-ac:hover{border-color:var(--red);color:var(--ink)}
+.fref-vx{font:10.5px var(--mono);color:var(--dim)}
 /* peşə təlimatı */
 .tl{display:grid;gap:10px;margin-top:6px}
 .tl-p{border:1px solid #232327;border-left:3px solid var(--amber);border-radius:3px;padding:12px 14px;background:#0b0b0c}
@@ -429,7 +437,7 @@ const saxla = () => {
   if(!aktiv) return;
   const s = sohbetler.find(x => x.id === aktiv.id); if(s) s.ad = aktiv.ad;
   fetch(`/api/sohbetler/${aktiv.id}`, {method:"PUT", headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({ad: aktiv.ad, mesajlar: aktiv.mesajlar})}).catch(() => {});
+    body:JSON.stringify({ad: aktiv.ad, mesajlar: aktiv.mesajlar, fayllar: aktiv.fayllar || []})}).catch(() => {});
 };
 
 function tarixceCiz(){
@@ -446,13 +454,44 @@ $("#tarixce").addEventListener("click", async e => {
   const el = e.target.closest(".soh"); if(!el) return;
   const s = await fetch(`/api/sohbetler/${el.dataset.id}`).then(r => r.ok ? r.json() : null).catch(() => null);
   if(!s) return;
-  aktiv = {id: s.id, ad: s.ad, mesajlar: s.mesajlar || []};
-  $("#sohbet").innerHTML = ""; aktiv.mesajlar.forEach(m => m.rol === "user" ? userMsj(m.metn) : aiMsj(m, false));
+  aktiv = {id: s.id, ad: s.ad, mesajlar: s.mesajlar || [], fayllar: s.fayllar || []}; sonSual = null;
+  $("#sohbet").innerHTML = ""; aktiv.mesajlar.forEach(m => m.rol === "user" ? userMsj(m.metn) : m.rol === "fayl" ? faylRefMsj(m) : aiMsj(m, false));
   $("#main").classList.toggle("bos", !aktiv.mesajlar.length); tarixceCiz();
+  // söhbətin faylı: hazırda başqa fayl açıqdırsa, söhbətin son faylı səssizcə yenidən açılır (söhbəti davam etdirmək üçün)
+  const son = [...aktiv.fayllar].reverse().find(f => f.nov !== "sablon") || aktiv.fayllar[aktiv.fayllar.length - 1];
+  if(son && son.id !== aktivFayl && !mesgul) faylAc(son, true);
 });
 
+function sohbetYarat(ad){
+  aktiv = {id: Date.now().toString(36), ad, mesajlar: [], fayllar: []};
+  sohbetler.unshift({id: aktiv.id, ad: aktiv.ad}); tarixceCiz();
+}
+// Söhbətdə fayla istinad: «📎 fayl.xlsx» — basanda «Fayllarım»dan yenidən açılır
+function faylRefMsj(m){
+  const d = document.createElement("div"); d.className = "msj fref";
+  d.innerHTML = `<div class="fref-q">${(m.fayllar || []).map(f => `<span class="fref-f" title="${esc(f.ad)}">
+      <span class="fref-ik">${f.nov === "sablon" ? "📋" : "📎"}</span><b>${esc(f.ad)}</b>
+      <button type="button" class="fref-ac" data-fref="${esc(f.id)}" data-ad="${esc(f.ad)}" data-nov="${esc(f.nov || "fayl")}">Aç</button></span>`).join("")}
+    ${m.vaxt ? `<span class="fref-vx">${esc(vaxtF(m.vaxt))}</span>` : ""}</div>`;
+  $("#sohbet").appendChild(d); return d;
+}
+function faylRefQeyd(refler){
+  if(!refler?.length) return;
+  $("#main").classList.remove("bos");
+  if(!aktiv) sohbetYarat(refler.find(f => f.nov !== "sablon")?.ad || refler[0].ad);
+  aktiv.fayllar = [...(aktiv.fayllar || []).filter(f => !refler.some(r => r.id === f.id)), ...refler];
+  const m = {rol: "fayl", fayllar: refler, vaxt: Date.now() / 1000};
+  aktiv.mesajlar.push(m); faylRefMsj(m); saxla();
+}
+// fayl mesajları da söhbətdə qalsın (söhbət yenidən açılanda görünsün)
+async function aiQeyd(m){ await aiMsj(m, false); if(aktiv){ aktiv.mesajlar.push({rol: "ai", cavab: m.cavab, hadiseler: m.hadiseler || []}); saxla(); } }
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-fref]"); if(!b || mesgul) return;
+  faylAc(fayllar.find(x => x.id === b.dataset.fref) || {id: b.dataset.fref, ad: b.dataset.ad, nov: b.dataset.nov});
+});
 async function yeniSohbet(){
-  aktiv = null; $("#sohbet").innerHTML = ""; $("#main").classList.add("bos"); tarixceCiz();
+  // əvvəlki söhbətin sualı yeni söhbətdə təkrar cavablanmasın
+  aktiv = null; sonSual = null; $("#sohbet").innerHTML = ""; $("#main").classList.add("bos"); tarixceCiz();
   await fetch("/api/yeni", {method:"POST"}).catch(() => {});
   $("#giris").focus();
 }
@@ -482,7 +521,7 @@ function sideAlt(r){
   $("#faylBas").textContent = ad + (r.uzlasma ? " · " + r.dovr_sonu.split("-").reverse().join(".") : "");
 }
 // Server versiyası: kod yenilənib, server köhnə qalıbsa, bu yazı köhnə versiyanı göstərir
-const UI_VERSIYA = "1.14.1";
+const UI_VERSIYA = "1.15.0";
 function versiyaCiz(r){
   let el = $("#versiya");
   if(!el){ el = document.createElement("div"); el.id = "versiya"; $("#yan").appendChild(el); }
@@ -731,7 +770,7 @@ async function gonder(metn){
   metn = metn.trim(); if(!metn || mesgul) return;
   mesgul = true; yeniləDuyme();
   $("#main").classList.remove("bos");
-  if(!aktiv){ aktiv = {id: Date.now().toString(36), ad: metn.slice(0, 40), mesajlar: []}; sohbetler.unshift({id: aktiv.id, ad: aktiv.ad}); tarixceCiz(); }
+  if(!aktiv) sohbetYarat(metn.slice(0, 40));
   aktiv.mesajlar.push({rol:"user", metn}); userMsj(metn);
   sonSual = metn;
   await cavabla(metn);
@@ -805,13 +844,13 @@ $("#fayllarim").addEventListener("click", async e => {
   const el = e.target.closest("[data-fid]"); if(!el || mesgul) return;
   const f = fayllar.find(x => x.id === el.dataset.fid); if(f) faylAc(f);
 });
-async function faylAc(f){
+async function faylAc(f, sessiz = false){  // sessiz: köhnə söhbət açılanda — söhbətə yeni mesaj yazmadan yüklə
   secilmisFayl = {name: f.ad, size: f.olcu}; secilmisFayllar = [{name: f.ad, size: f.olcu}];
   basliq("Fayl açılır…");
   $("#elave").classList.add("var", "isleyir"); $("#eAd").textContent = f.ad; $("#eSt").textContent = "Saxlanmış fayl açılır…";
   const r = await fetch(`/api/fayllar/${f.id}/ac` + ($("#dovr").value ? `?dovr_sonu=${$("#dovr").value}` : ""), {method:"POST"});
   if(!r.ok){ $("#eSt").textContent = await xetaOxu(r); $("#elave").classList.remove("isleyir"); basliq(BASLIQ); fayllariYukle(); return; }
-  aktivFayl = f.id; await isiIzle((await r.json()).is);
+  aktivFayl = f.id; await isiIzle((await r.json()).is, sessiz);
 }
 
 // Söhbətdə düymələrlə sual (cavab gözlənilir)
@@ -865,7 +904,7 @@ async function yukle(){
   await isiIzle(cavab0.j.is);
 }
 
-async function isiIzle(is){
+async function isiIzle(is, sessiz = false){
   // Böyük fayllar arxa planda çevrilir: vəziyyəti izləyirik
   let j;
   while(true){
@@ -876,8 +915,11 @@ async function isiIzle(is){
     $("#eSt").textContent = st.n ? `Oxunur: ${st.i}/${st.n} vərəq · ${st.vereq}` : "Oxunur və təhlil edilir…";
     basliq(st.n ? `Fayl oxunur… ${st.i}/${st.n} vərəq` : "Fayl oxunur…");
   }
+  const esasRef = (j.fayl_ref || []).find(f => f.nov !== "sablon"); if(esasRef) aktivFayl = esasRef.id;
   fayllariYukle();
   sideAlt(j); hazirlarCiz(j.teklifler, j.fayl);
+  if(sessiz){ faylVar = true; basliq(BASLIQ); $("#eSt").textContent = `Söhbətin faylı yenidən açıldı · ${j.fayl || ""}`; return; }
+  faylRefQeyd(j.fayl_ref);  // söhbətdə fayla istinad qalsın (söhbət yoxdursa yaranır)
   // Dövrün sonu yalnız uzlaşma faylı üçün lazımdır
   $("#dovrQab").style.display = j.uzlasma ? "" : "none";
   if(j.uzlasma){ $("#dovr").value = j.dovr_sonu; sonDovr = j.dovr_sonu; }
@@ -887,17 +929,17 @@ async function isiIzle(is){
     basliq(BASLIQ); faylVar = true; $("#main").classList.remove("bos");
     if(j.yalniz_sablon && !j.bank){
       $("#eSt").textContent = "İnteqrasiya şablonu · bank çıxarışı gözlənilir";
-      await aiMsj({cavab: `«${j.sablon}» inteqrasiya şablonu kimi qəbul olundu. İndi bank çıxarışını yükləyin — şablonu doldurub geri verəcəyəm.`, hadiseler: []}, false);
+      await aiQeyd({cavab: `«${j.sablon}» inteqrasiya şablonu kimi qəbul olundu. İndi bank çıxarışını yükləyin — şablonu doldurub geri verəcəyəm.`, hadiseler: []});
       return;
     }
     if(j.bank){
       $("#eAd").textContent = j.fayl + " + " + j.sablon;
       $("#eSt").textContent = `Bank çıxarışı · ${reqemF(j.bank.daxilolma)} daxilolma · şablon: ${j.sablon}`;
-      await aiMsj({cavab: `Bank çıxarışı (${reqemF(j.bank.daxilolma)} daxilolma) və «${j.sablon}» şablonu qəbul olundu. Şablonu doldururam.`, hadiseler: []}, false);
+      await aiQeyd({cavab: `Bank çıxarışı (${reqemF(j.bank.daxilolma)} daxilolma) və «${j.sablon}» şablonu qəbul olundu. Şablonu doldururam.`, hadiseler: []});
       const dr = await cavabla("Şablonu doldur");
       // sistem maddəni soruşubsa — əvvəl o cavablansın, daxilolma sualları sonra
       if(j.bank.sual && !(dr?.hadiseler || []).some(h => h.ui?.tip === "sual")){
-        await aiMsj({cavab: `${j.bank.sual} daxilolmada əmin deyiləm — sizdən bir-bir soruşuram. Cavablardan sonra «Şablonu doldur» yazsanız, fayl yenidən hazırlanacaq.`, hadiseler: []}, false);
+        await aiQeyd({cavab: `${j.bank.sual} daxilolmada əmin deyiləm — sizdən bir-bir soruşuram. Cavablardan sonra «Şablonu doldur» yazsanız, fayl yenidən hazırlanacaq.`, hadiseler: []});
         await cavabla("Sualları ver");
       }
       return;
@@ -915,7 +957,7 @@ async function isiIzle(is){
     // əmin olmadığı daxilolmalar varsa: dərhal mühasibdən soruş (başqa gözləyən sual yoxdursa)
     if(j.bank.sual && !gozleyenSual && !mesgul){
       basliq(BASLIQ); faylVar = true; $("#main").classList.remove("bos");
-      await aiMsj({cavab: mesaj, hadiseler: []}, false);
+      await aiQeyd({cavab: mesaj, hadiseler: []});
       await cavabla("Sualları ver");
       return;
     }
@@ -931,12 +973,12 @@ async function isiIzle(is){
     gozleyenSual = null;
     basliq(BASLIQ);
     $("#main").classList.remove("bos");
-    await aiMsj({cavab: evvelVar ? `Fayl dəyişdi: «${secilmisFayl.name}». Son sualınızı yeni fayl üzrə cavablandırıram: «${sual}»`
-                                 : `«${secilmisFayl.name}» oxundu. Sualınızı cavablandırıram: «${sual}»`, hadiseler: []}, false);
+    await aiQeyd({cavab: evvelVar ? `Fayl dəyişdi: «${secilmisFayl.name}». Son sualınızı yeni fayl üzrə cavablandırıram: «${sual}»`
+                                 : `«${secilmisFayl.name}» oxundu. Sualınızı cavablandırıram: «${sual}»`, hadiseler: []});
     await cavabla(sual);
     return;
   }
-  if(!$("#main").classList.contains("bos")) await aiMsj({cavab: mesaj, hadiseler}, false);
+  if(!$("#main").classList.contains("bos")) await aiQeyd({cavab: mesaj, hadiseler});
 }
 
 // ---------- cədvəl düymələri ----------

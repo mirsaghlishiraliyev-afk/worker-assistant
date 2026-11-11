@@ -612,3 +612,39 @@ def test_rehber_tapsiriq_verir_isci_icra_edir():
     r = sohbet(rehber, no)
     addimlar = [a[2] for a in r["hadiseler"][0]["ui"]["bloklar"][1]["setirler"]]
     assert addimlar[-3:] == [f"Məlumat sorğusu {sno}: hansı aya aiddir?", f"{sno} — cavablandı: oktyabr", "Tamamlandı"]
+
+
+def test_sohbet_fayllara_istinad_saxlayir():
+    """Yüklənən / «Fayllarım»dan açılan fayl istinad (id) qaytarır; söhbət öz fayllarını saxlayır."""
+    _qur()
+    c = TestClient(app)
+    _gir(c, "aynur", "Parol1")
+
+    def gozle(j):
+        for _ in range(100):
+            st = c.get(f"/api/yukle/{j['is']}").json()
+            if st["status"] != "isleyir":
+                return st
+            time.sleep(0.1)
+    with open(DATA / "stok_test.xlsx", "rb") as f:
+        st = gozle(c.post("/api/yukle", files=[("fayl", ("stok.xlsx", f))]).json())
+    ref = st["netice"]["fayl_ref"]
+    assert len(ref) == 1 and ref[0]["ad"] == "stok.xlsx" and ref[0]["nov"] == "fayl"
+    assert any(f["id"] == ref[0]["id"] for f in c.get("/api/fayllar").json())       # «Fayllarım»dakı id
+    st = gozle(c.post(f"/api/fayllar/{ref[0]['id']}/ac").json())                       # yeni söhbətdə yenidən açmaq
+    assert st["status"] == "hazir" and st["netice"]["fayl_ref"][0]["id"] == ref[0]["id"]
+    c.put("/api/sohbetler/sohbet1", json={"ad": "Stok", "mesajlar": [{"rol": "fayl", "fayllar": ref}],
+                                         "fayllar": ref + [{"id": "../pis", "ad": "x"}, ref[0]]})
+    s = c.get("/api/sohbetler/sohbet1").json()
+    assert s["fayllar"] == ref                                                         # yalnız düzgün id, təkrarsız
+
+
+def test_serhden_sonra_kod_yoxdur():
+    """Şərh sətrin ortasına düşüb arxasındakı kodu «yeməsin» (v1.13.0 və v1.15.0-da belə səhv olub)."""
+    import re
+    js = (pathlib.Path(__file__).resolve().parents[1] / "assistant" / "static" / "index.html").read_text(encoding="utf-8")
+    js = js[js.index("<script>"):]
+    pis = [s for s in js.splitlines() if re.search(r"//[^\n]*[;)]\s*\$\(|//[^\n]*;\s*(aktiv|await|const|let|if|return)\b", s)]
+    assert not pis, pis
+    py = (pathlib.Path(__file__).resolve().parents[1] / "assistant" / "app.py").read_text(encoding="utf-8")
+    assert not [s for s in py.splitlines() if re.search(r'#[^\n]*"\w+":\s', s)], "app.py: şərhin arxasında açar qalıb"

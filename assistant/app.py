@@ -182,6 +182,7 @@ class Mesaj(BaseModel):
 class Sohbet(BaseModel):
     ad: str = ""
     mesajlar: list = []
+    fayllar: list = []  # söhbətdə istifadə olunan fayllar: [{"id", "ad", "nov"}] («Fayllarım»a istinad)
 
 
 # ---------------- söhbət tarixçəsi (hər istifadəçinin özü) ----------------
@@ -201,7 +202,7 @@ def sohbet_al(sid: str):
 @app.put("/api/sohbetler/{sid}")
 def sohbet_saxla(sid: str, s: Sohbet):
     try:
-        TR.saxla(_CARI.get(), sid, s.ad, s.mesajlar)
+        TR.saxla(_CARI.get(), sid, s.ad, s.mesajlar, s.fayllar)
     except ValueError as e:
         raise HTTPException(400, str(e))
     return {"ok": True}
@@ -278,7 +279,7 @@ def _dovr(dovr_sonu):
         raise HTTPException(400, "Dövrün sonu düzgün tarix deyil")
 
 
-def _is_baslat(yollar, dovr, rejim="", kitabxanaya=True):
+def _is_baslat(yollar, dovr, rejim="", kitabxanaya=True, ref=None):
     """Faylları arxa planda oxuyur (yeni yüklənən və ya «Fayllarım»dan açılan). yollar: [(yol, orijinal ad)]."""
     is_id = uuid.uuid4().hex[:10]
     login = _CARI.get()  # arxa plan axınında istifadəçi kontekstdən gəlmir: əvvəlcədən götürülür
@@ -293,9 +294,14 @@ def _is_baslat(yollar, dovr, rejim="", kitabxanaya=True):
             with KILID:
                 sablonlar = [(y, a) for y, a in yollar if BANK.sablon_mi(y)]
                 esas = [(y, a) for y, a in yollar if (y, a) not in sablonlar]
+                refler = list(ref or [])  # söhbətdə fayla istinad: «Fayllarım»dakı id ilə (sonra yenidən açmaq üçün)
                 if kitabxanaya:  # «Fayllarım»: kim nəyi yükləyib — yadda qalır
-                    sablonlar = [(pathlib.Path(KB.elave(login, a, y, "sablon", rejim)[1]), a) for y, a in sablonlar]
-                    esas = [(pathlib.Path(KB.elave(login, a, y, "fayl", rejim)[1]), a) for y, a in esas]
+                    def _elave(y, a, nov):
+                        q, yol = KB.elave(login, a, y, nov, rejim)
+                        refler.append({"id": q["id"], "ad": a, "nov": nov})
+                        return pathlib.Path(yol), a
+                    sablonlar = [_elave(y, a, "sablon") for y, a in sablonlar]
+                    esas = [_elave(y, a, "fayl") for y, a in esas]
                 if sablonlar:  # inteqrasiya şablonu: yadda saxlanır, 1C faylı onun üzərində doldurulur
                     S.sablon = {"yol": sablonlar[0][0], "ad": sablonlar[0][1]}
                 if esas:
@@ -303,7 +309,7 @@ def _is_baslat(yollar, dovr, rejim="", kitabxanaya=True):
                     S.yukle(esas[0][0], dovr, orijinal_ad=esas[0][1], progress=progress)
                     S.sablon = sablon
                 S.teklifler = TK.hazirla(S)  # fayla görə hazır sorğular
-            ISLER[is_id].update(status="hazir", netice={**veziyyet(), "yalniz_sablon": not esas,
+            ISLER[is_id].update(status="hazir", netice={**veziyyet(), "yalniz_sablon": not esas, "fayl_ref": refler,
                                                          "fayllar": [a for _, a in yollar]})
         except Exception as e:
             ISLER[is_id].update(status="xeta", xeta=f"Fayl oxunmadı: {e}")
@@ -352,7 +358,8 @@ def fayli_ac(fid: str, dovr_sonu: str = ""):
     e = KB.al(_CARI.get(), fid)
     if not e or not pathlib.Path(e["yol"]).exists():
         raise HTTPException(404, "Fayl tapılmadı (silinib ola bilər) — yenidən yükləyin")
-    return _is_baslat([(pathlib.Path(e["yol"]), e["ad"])], _dovr(dovr_sonu), kitabxanaya=False)
+    return _is_baslat([(pathlib.Path(e["yol"]), e["ad"])], _dovr(dovr_sonu), kitabxanaya=False,
+                      ref=[{"id": e["id"], "ad": e["ad"], "nov": e.get("nov", "fayl")}])
 
 
 @app.delete("/api/fayllar/{fid}")

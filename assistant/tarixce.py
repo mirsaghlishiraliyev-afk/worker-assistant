@@ -48,10 +48,19 @@ def al(login, sid):
         return next((s for s in _oxu(login)["sohbetler"] if s["id"] == sid), None)
 
 
-def saxla(login, sid, ad, mesajlar):
+def _refler(fayllar):
+    """Söhbətin fayl istinadları: yalnız id/ad/nov, təkrarsız, ən çox 20."""
+    out = {}
+    for f in fayllar or []:
+        if isinstance(f, dict) and re.fullmatch(r"[a-z0-9]{1,32}", str(f.get("id", ""))):
+            out[f["id"]] = {"id": f["id"], "ad": str(f.get("ad", ""))[:200], "nov": "sablon" if f.get("nov") == "sablon" else "fayl"}
+    return list(out.values())[-20:]
+
+
+def saxla(login, sid, ad, mesajlar, fayllar=None):
     if not ID_RE.fullmatch(sid or ""):
         raise ValueError("Söhbət nömrəsi düzgün deyil")
-    s = {"id": sid, "ad": (ad or "")[:80], "vaxt": time.time(), "mesajlar": mesajlar}
+    s = {"id": sid, "ad": (ad or "")[:80], "vaxt": time.time(), "mesajlar": mesajlar, "fayllar": _refler(fayllar)}
     if len(json.dumps(s, ensure_ascii=False).encode()) > MAKS_OLCU:
         raise ValueError("Söhbət çox böyükdür — yeni söhbət açın")
     with _KILID:
