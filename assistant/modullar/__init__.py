@@ -11,7 +11,7 @@ from . import bank, excel, muhasibat, qebul, stok, teleb
 
 AKTIV = [bank, muhasibat, qebul, stok, teleb, excel]
 
-# Hələ qurulmayan, amma yol xəritəsində olan sahələr (interfeysdə "tezliklə" kimi görünür)
+# Hələ qurulmayan, amma yol xəritəsində olan sahələr (interfeysin modul siyahısında göstərilmir)
 PLANLASDIRILIR = [
     {"kod": "muqavile", "ad": "Müqavilələr", "tesvir": "Reyestr, müddət bildirişləri, müqavilə müqayisəsi", "status": "planlaşdırılır"},
     {"kod": "senedler", "ad": "Sənəd dövriyyəsi", "tesvir": "Məktubların qeydiyyatı, cavab qaralamaları, axtarış", "status": "planlaşdırılır"},

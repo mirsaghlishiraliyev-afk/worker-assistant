@@ -458,7 +458,7 @@ function sideAlt(r){
   $("#faylBas").textContent = ad + (r.uzlasma ? " · " + r.dovr_sonu.split("-").reverse().join(".") : "");
 }
 // Server versiyası: kod yenilənib, server köhnə qalıbsa, bu yazı köhnə versiyanı göstərir
-const UI_VERSIYA = "1.12.0";
+const UI_VERSIYA = "1.12.1";
 function versiyaCiz(r){
   let el = $("#versiya");
   if(!el){ el = document.createElement("div"); el.id = "versiya"; el.style.cssText = "font:10.5px var(--mono);color:var(--dim);padding:6px 8px 0"; $("#yan").appendChild(el); }
@@ -490,9 +490,10 @@ function peseModullari(){
 document.addEventListener("click", e => { if(e.target.id === "peseDeyis"){ e.preventDefault(); peseAc(true); } });
 function modullarCiz(mods){
   const menim = peseModullari();
-  mods = [...(mods || [])].sort((a, b) => (menim.includes(a.kod) ? menim.indexOf(a.kod) : 99) - (menim.includes(b.kod) ? menim.indexOf(b.kod) : 99));
-  $("#modullar").innerHTML = mods.map(m => `<div class="mod ${m.status === "aktiv" ? "" : "plan"} ${menim.includes(m.kod) ? "menim" : ""}" title="${esc(m.tesvir)}">
-    <span class="nq"></span>${esc(m.ad)}${m.status === "aktiv" ? "" : '<span class="etiket">tezliklə</span>'}</div>`).join("");
+  // yalnız işləyən modullar göstərilir (hələ qurulmayanlar — «tezliklə» — siyahıda yoxdur)
+  mods = (mods || []).filter(m => m.status === "aktiv").sort((a, b) => (menim.includes(a.kod) ? menim.indexOf(a.kod) : 99) - (menim.includes(b.kod) ? menim.indexOf(b.kod) : 99));
+  $("#modullar").innerHTML = mods.map(m => `<div class="mod ${menim.includes(m.kod) ? "menim" : ""}" title="${esc(m.tesvir)}">
+    <span class="nq"></span>${esc(m.ad)}</div>`).join("");
   // peşə seçilibsə: peşəyə görə hazır həllər; yoxsa — modulların nümunələri
   if(peseHelleri.length){
     modulKartlari = peseHelleri.map(h => `<button class="teklif" data-s="${esc(h.s)}"><span class="modad">${esc(h.pese)}</span><b>${esc(h.b)}</b><span>${esc(h.a)}</span></button>`).join("");
