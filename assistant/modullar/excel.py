@@ -481,6 +481,7 @@ def qrupla(s, deyer_sutunu, qrup_sutunu=None, emeliyyat="cem", vereq=None, n=20)
         return {"metn": f"«{qrup_sutunu}» sütunu tapılmadı. Sütunlar: {', '.join(v['sutunlar'])}", "ui": None}
     qifade = f"substr({qq},1,7)" if v["tipler"].get(qc) == "tarix" else qq
     df = _sorgu(s, f"SELECT {qifade} AS q, {em}({dq}) AS d FROM {t} GROUP BY q ORDER BY d DESC LIMIT {int(n or 20)}")
+    df["q"] = df["q"].where(df["q"].notna() & (df["q"].astype(str).str.strip() != ""), "(boş)")  # «nan» əvəzinə
     df.columns = [qc, f"{em_ad} · {dc}"]
     return {"metn": f"«{ad}»: {dc} {em_ad.lower()}, {qc} üzrə:\n" + "\n".join(f"- {a}: {_f(b)}" for a, b in df.itertuples(index=False)),
             "ui": _cedvel(f"{dc} · {em_ad.lower()} · {qc} üzrə", df, {}, int(n or 20))}

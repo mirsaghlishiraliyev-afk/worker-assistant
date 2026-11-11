@@ -40,6 +40,25 @@ PESELER = [
      "heller": [
          {"s": "Fayl haqqında ümumi məlumat ver", "b": "Tabelin / kadr cədvəlinin strukturu", "a": "Excel faylını yükləyin"},
          {"s": "Fayldakı problemləri tap", "b": "Tabeldə səhvlər", "a": "təkrarlar, boş xanalar, qeyri-adi dəyərlər"}]},
+    # Tibb: modul hələ yoxdur — həllər Excel təhlili ilə (xəstə qeydiyyatı, qəbul jurnalı, klinikanın gəlir cədvəli)
+    {"kod": "hekim", "ad": "Həkim", "tesvir": "xəstə qeydiyyatı, qəbullar", "modullar": ["excel"],
+     "heller": [
+         {"s": "Fayl haqqında ümumi məlumat ver", "b": "Xəstə qeydiyyatının strukturu", "a": "vərəqlər, sütunlar, qeyd sayı"},
+         {"s": "Sütunları göstər", "b": "Göstəricilər üzrə statistika", "a": "ən çox rast gələn dəyərlər, min / maks / orta"},
+         {"s": "Fayldakı problemləri tap", "b": "Qeydiyyatda səhvlər", "a": "təkrar qeydlər, boş xanalar, şübhəli tarixlər"}]},
+    {"kod": "dis_hekimi", "ad": "Diş həkimi", "tesvir": "qəbul jurnalı, xidmətlər", "modullar": ["excel"],
+     "heller": [
+         {"s": "Fayl haqqında ümumi məlumat ver", "b": "Qəbul jurnalının strukturu", "a": "vərəqlər, sütunlar, qəbul sayı"},
+         {"s": "Məbləğ cəmi xidmət üzrə", "b": "Xidmətlər üzrə məbləğ", "a": "plomb, kanal, implant… hər birindən nə qədər"},
+         {"s": "Məbləğ cəmi xəstə üzrə", "b": "Xəstələr üzrə məbləğ", "a": "hansı xəstəyə nə qədər xidmət göstərilib"},
+         {"s": "Fayldakı problemləri tap", "b": "Jurnalda səhvlər", "a": "təkrar qəbul, boş xanalar, qeyri-adi məbləğlər"}]},
+    {"kod": "klinika_rehber", "ad": "Diş klinikasının rəhbəri", "tesvir": "həkimlər, xidmətlər, gəlir", "modullar": ["excel"],
+     "heller": [
+         {"s": "Məbləğ cəmi həkim üzrə", "b": "Həkimlər üzrə gəlir", "a": "hər həkimin göstərdiyi xidmətlərin məbləği"},
+         {"s": "Ödənilib cəmi həkim üzrə", "b": "Həkimlər üzrə ödənilən", "a": "xəstələrin faktiki ödədiyi məbləğ"},
+         {"s": "Məbləğ cəmi xidmət üzrə", "b": "Xidmətlər üzrə gəlir", "a": "ən çox gəlir gətirən xidmətlər"},
+         {"s": "Ən böyük 10 məbləğ", "b": "Ən böyük 10 qəbul", "a": "ən yüksək məbləğli qəbullar"},
+         {"s": "Fayldakı problemləri tap", "b": "Hesabatda səhvlər", "a": "təkrar sətirlər, boş həkim / xidmət xanaları"}]},
     {"kod": "rehber", "ad": "Rəhbər", "tesvir": "xülasələr, nəzarət", "modullar": ["bank", "muhasibat", "excel"],
      "heller": [
          {"s": "Vəziyyət necədir?", "b": "Ümumi vəziyyət", "a": "bağlanma faizi, istisnalar, borclar"},

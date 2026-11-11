@@ -430,11 +430,39 @@ def test_pesheler_sorusulur_ve_yadda_qalir():
 
 
 def test_hellerin_hamisi_basa_dusulur():
-    """Peşə həllərinin hər sorğusu işləyən modulların öz sorğularındandır (boş vəd yoxdur)."""
+    """Peşə həllərinin hər sorğusu işləyən bir alətə gedir (boş vəd yoxdur): ya modulun öz sorğusudur,
+    ya da klinika qəbul jurnalı nümunəsində (tests/data/klinika_test.xlsx) həqiqətən nəticə verir."""
     from assistant import profil as PR
     from assistant.modullar import AKTIV
     from assistant.tools import norm
     isleyen = {norm(t["s"]) for m in AKTIV for t in m.MODUL["teklifler"]}
+    _qur()
+    c = TestClient(app)
+    _gir(c, "aynur", "Parol1")
+    with open(DATA / "klinika_test.xlsx", "rb") as f:
+        j = c.post("/api/yukle", files=[("fayl", ("klinika.xlsx", f))]).json()
+    for _ in range(100):
+        if c.get(f"/api/yukle/{j['is']}").json()["status"] != "isleyir":
+            break
+        time.sleep(0.1)
     for p in PR.PESELER:
         assert p["heller"], p["kod"]
-        assert all(norm(h["s"]) in isleyen for h in p["heller"]), p["kod"]
+        for h in p["heller"]:
+            if norm(h["s"]) in isleyen:
+                continue
+            r = c.post("/api/sohbet", json={"mesaj": h["s"]}).json()
+            alet = r["hadiseler"][0]["alet"] if r.get("hadiseler") else None
+            assert alet in {"excel_xulase", "sutunlar", "qrupla", "en_boyuk", "problemler"}, (p["kod"], h["s"], r)
+            assert "tapılmadı" not in r["cavab"] and "nan" not in r["cavab"], (h["s"], r["cavab"][:200])
+
+
+def test_tibb_hellerinin_neticesi():
+    from assistant.modullar import excel as EX
+
+    class K:
+        excel = EX.ac(DATA / "klinika_test.xlsx", tempfile.mkdtemp())
+    m = EX.qrupla(K(), **EX.qayda(K(), "Məbləğ cəmi həkim üzrə")[1])["metn"]
+    assert "Dr. Həsənov" in m and "(boş)" in m                                  # boş həkim xanası «nan» deyil
+    m = EX.qrupla(K(), **EX.qayda(K(), "Məbləğ cəmi xidmət üzrə")[1])["metn"]
+    assert m.index("Implant") < m.index("Plomb")                                # ən çox gəlir gətirən öndədir
+    assert "Təkrar sətirlər" in EX.problemler(K())["metn"]
