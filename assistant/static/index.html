@@ -266,10 +266,10 @@ a.wa-link{background:linear-gradient(180deg,#25d366,#128c4a);border-color:#25d36
   border:1px solid var(--line-2);border-radius:4px;padding:24px 22px}
 #pesePenc h2{margin:0 0 6px;font:700 14px var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--ink)}
 #pesePenc p{margin:0 0 16px;color:var(--muted);font-size:14px}
-#pesePenc .ps{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
+#pesePenc .ps{columns:2 210px;column-gap:8px}  /* qəzet sütunları: boşluq qalmır, qrup bölünmür */
 #pesePenc label.pe{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:2px;cursor:pointer}
 #pesePenc label.pe:has(input:checked){border-color:var(--red);background:rgba(255,42,42,.08)}
-#pesePenc .pe-qrup{display:grid;gap:8px;align-content:start}
+#pesePenc .pe-qrup{display:grid;gap:8px;break-inside:avoid;margin-bottom:8px}
 #pesePenc label.alt-pe{margin-left:22px;border-left:2px solid var(--red-dim)}
 #pesePenc .dax{display:block;color:var(--amber)!important;font-size:12px!important;margin-top:2px}
 #pesePenc .dax[hidden]{display:none}
@@ -459,7 +459,7 @@ function sideAlt(r){
   $("#faylBas").textContent = ad + (r.uzlasma ? " · " + r.dovr_sonu.split("-").reverse().join(".") : "");
 }
 // Server versiyası: kod yenilənib, server köhnə qalıbsa, bu yazı köhnə versiyanı göstərir
-const UI_VERSIYA = "1.12.2";
+const UI_VERSIYA = "1.12.3";
 function versiyaCiz(r){
   let el = $("#versiya");
   if(!el){ el = document.createElement("div"); el.id = "versiya"; el.style.cssText = "font:10.5px var(--mono);color:var(--dim);padding:6px 8px 0"; $("#yan").appendChild(el); }
