@@ -129,3 +129,90 @@ def heller(profil):
                 gorulen.add(h["s"])
                 out.append({**h, "pese": p["ad"]})
     return out
+
+
+# ======================= peşəyə görə istifadə təlimatı =======================
+# Peşə seçiləndə (və «Təlimat» yazılanda) göstərilir. Hər addımın nümunə sorğusu («s») düymədir — basanda işləyir.
+# Yalnız sistemin bu gün həqiqətən bacardığı şeylər yazılır (test yoxlayır: hər «s» işləyən sorğudur).
+_EXCEL = [
+    {"b": "Excel faylını yükləyin", "m": "📎 düyməsi ilə faylı əlavə edin. Sistem vərəqləri, sütunları və sətir sayını göstərir.",
+     "s": "Fayl haqqında ümumi məlumat ver"},
+    {"b": "Səhvləri tapın", "m": "Təkrar sətirlər, boş xanalar, şübhəli tarixlər və qeyri-adi dəyərlər bir siyahıda.",
+     "s": "Fayldakı problemləri tap"},
+    {"b": "Hesablayın və axtarın", "m": "Yazın: «<rəqəm sütunu> cəmi <sütun> üzrə», «Ən böyük 10 <sütun>», «'mətn' axtar», «Sütunları göstər»."},
+]
+TELIMATLAR = {
+    "muhasib": {
+        "giris": "Sistem bank çıxarışındakı daxilolmaları təsnif edir, 1C üçün inteqrasiya faylı hazırlayır və uzlaşma aparır.",
+        "fayl": "Kapital Bank Excel çıxarışı, «Sığorta haqqı inteqrasiya faylı» şablonu, uzlaşma faylı",
+        "addimlar": [
+            {"b": "Bank çıxarışını yükləyin", "m": "Daxilolmalar kateqoriyalara bölünür: sığorta haqqı, subroqasiya, əmək haqqı, ezamiyyə, təlim…",
+             "s": "Bank daxilolmalarının xülasəsi"},
+            {"b": "Suallara cavab verin", "m": "Əmin olmadığı daxilolmaları sistem bir-bir soruşur. Cavabınız yadda qalır — eyni ödəyici növbəti "
+                                             "dəfə avtomatik tanınır. Tanınmayanlar «Yoxlanmalı»dadır.", "s": "Yoxlanmalıları göstər"},
+            {"b": "1C faylını hazırlayın", "m": "Sistem «Pul vəsaitinin maddəsi»ni soruşur — təkliflərdən seçin və ya 1C-dəki adı yazın. "
+                                               "Öz şablonunuzu yükləsəniz, onu doldurur.", "s": "1C üçün Excel hazırla"},
+            {"b": "Uzlaşma", "m": "Uzlaşma faylını yükləyin: bağlantılar, istisnalar, debitor borcları.", "s": "Vəziyyət necədir?"}]},
+    "maliyye": {
+        "giris": "Sistem Excel hesabatlarını təhlil edir: cəmlər, qruplaşdırma, ən böyüklər, səhvlər.",
+        "fayl": "istənilən Excel hesabatı, uçot jurnalı",
+        "addimlar": _EXCEL[:1] + [{"b": "Ümumi xərc", "m": "Uçot yazılışlarından (Dt 7xx) hesablanır; hansı hesabların daxil olduğunu "
+                                                         "özünüz dəyişə bilərsiniz.", "s": "Şirkətin ümumi xərci nə qədərdir?"}] + _EXCEL[1:]},
+    "huquq": {
+        "giris": "Müqavilələr modulu (müddət bildirişləri) hazırlanır. Hələlik müqavilə reyestrini Excel kimi təhlil edə bilərsiniz.",
+        "fayl": "müqavilə reyestri (Excel)", "addimlar": _EXCEL},
+    "karguzar": {
+        "giris": "Sənəd dövriyyəsi modulu hazırlanır. Hələlik məktub qeydiyyatı jurnalını Excel kimi təhlil edə bilərsiniz.",
+        "fayl": "qeydiyyat jurnalı (Excel)", "addimlar": _EXCEL},
+    "kadr": {
+        "giris": "Kadrlar modulu hazırlanır. Hələlik tabeli və kadr cədvəlini Excel kimi təhlil edə bilərsiniz.",
+        "fayl": "tabel, kadr cədvəli (Excel)", "addimlar": _EXCEL},
+    "rehber": {
+        "giris": "Sistem ümumi vəziyyəti, daxilolmaları, borcları və xərcləri qısa xülasə kimi göstərir.",
+        "fayl": "uzlaşma faylı, bank çıxarışı, uçot jurnalı",
+        "addimlar": [
+            {"b": "Ümumi vəziyyət", "m": "Uzlaşma faylı yüklənibsə: bağlanma faizi, istisnalar, borclar.", "s": "Vəziyyət necədir?"},
+            {"b": "Daxilolmalar", "m": "Bank çıxarışı yüklənibsə: kateqoriyalar üzrə məbləğlər.", "s": "Bank daxilolmalarının xülasəsi"},
+            {"b": "Borclar və xərclər", "m": "Kim bizə nə qədər borcludur; şirkətin ümumi xərci.", "s": "Debitor borcları göstər"}]},
+    "hekim": {
+        "giris": "Sistem xəstə qeydiyyatını və qəbul cədvəlini Excel kimi təhlil edir. Xəstə məlumatı həssasdır — faylı yalnız "
+                 "klinikanın öz serverində işlədin.",
+        "fayl": "xəstə qeydiyyatı, qəbul cədvəli (Excel)",
+        "addimlar": _EXCEL[:1] + [{"b": "Statistika", "m": "Hər sütun üzrə: ən çox rast gələn dəyərlər (məs. diaqnozlar), tarix aralığı, "
+                                                         "min / maks / orta.", "s": "Sütunları göstər"}] + _EXCEL[1:2]},
+    "dis_hekimi": {
+        "giris": "Sistem stoka tələblərinizi rəhbərə çatdırır və qəbula yazılan xəstələrə WhatsApp mesajları hazırlayır.",
+        "fayl": "qəbul jurnalı (Xəstə, Telefon, Qəbul tarixi, Saat, Həkim, Problem, Yazılma tarixi)",
+        "addimlar": [
+            {"b": "Stoka tələb yazın", "m": "Fayl lazım deyil. Yazın: «Stoka tələb: Kompozit plomb A2 — 5 ədəd, təcili». Rəhbər təsdiq "
+                                           "edəndə «Tələblərim»də görünəcək.", "s": "Stoka tələb yaz"},
+            {"b": "Qəbul jurnalını yükləyin", "m": "Sistem xəstələri, qəbul vaxtını və telefonu olmayanları göstərir.", "s": "Qəbulları göstər"},
+            {"b": "Xəstəyə təsdiq mesajı", "m": "Nə vaxt yazıldığı, qəbul vaxtı, həkim və problem. Xəstədən gecikəcəksə sizi "
+                                               "məlumatlandırmasını xahiş edir. «WhatsApp-da aç»ı basıb göndərin.",
+             "s": "Təsdiq mesajlarını hazırla"},
+            {"b": "Qəbula yaxın xatırlatma", "m": "Həm xəstəyə, həm sizə: işiniz yubanarsa, pasiyenti məlumatlandırın (nömrəsi mesajdadır). "
+                                                 "Nömrəniz jurnalda yoxdursa yazın: «Dr. Ad Soyad telefonu 050 …».",
+             "s": "Xatırlatmaları hazırla"}]},
+    "klinika_rehber": {
+        "giris": "Sistem həkimlərin stok tələblərini sizə gətirir, azalan məhsulları göstərir, təchizatçılara sifariş və xəstələrə "
+                 "xatırlatma hazırlayır. Heç nə sizin təsdiqiniz olmadan göndərilmir.",
+        "fayl": "stok faylı (Məhsul, Qalıq, Minimum qalıq, Təchizatçı, Təchizatçının telefonu), qəbul jurnalı",
+        "addimlar": [
+            {"b": "Nömrənizi yazın", "m": "Stok bildirişləri və həkimlərin tələbləri WhatsApp ilə sizə gəlsin: «Rəhbərin telefonu 050 123 45 67»."},
+            {"b": "Həkimlərin tələbləri", "m": "Təsdiq və ya rədd yalnız sizdədir. Təsdiqlənənlər sifarişə əlavə olunur.",
+             "s": "Stok tələblərini göstər"},
+            {"b": "Stoku yoxlayın", "m": "Stok faylını yükləyin: bitən və minimuma çatan məhsullar, sifariş təklifi ilə.",
+             "s": "Azalan məhsulları göstər"},
+            {"b": "Təchizatçılara sifariş", "m": "Hər təchizatçıya öz məhsulları ilə WhatsApp mesajı.", "s": "Təchizatçılara sifariş hazırla"},
+            {"b": "Gəlir təhlili", "m": "Qəbul / gəlir cədvəli üzrə həkimlər və xidmətlər.", "s": "Məbləğ cəmi həkim üzrə"}]},
+}
+
+
+def telimat(profil):
+    """Seçilmiş peşələr üçün təlimat (interfeysdə «telimat» bloku kimi göstərilir)."""
+    kodlar = (profil or {}).get("peseler", [])
+    if not kodlar:
+        return None
+    peseler = [{"ad": next(p["ad"] for p in PESELER if p["kod"] == k), **TELIMATLAR[k]} for k in kodlar if k in TELIMATLAR]
+    return {"tip": "telimat", "peseler": peseler,
+            "son": "Bu təlimatı istənilən vaxt yenidən açmaq üçün «Təlimat» yazın. Peşəni yan paneldəki «Peşələrim»dən dəyişə bilərsiniz."}

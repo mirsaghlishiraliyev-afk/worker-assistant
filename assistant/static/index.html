@@ -235,6 +235,19 @@ main.bos .hazirlar{display:none!important}  /* boş ekranda sorğular aşağıda
   .marka{letter-spacing:.16em;font-size:14px}
   header .sag .fayl-ad{display:none}
 }
+/* peşə təlimatı */
+.tl{display:grid;gap:10px;margin-top:6px}
+.tl-p{border:1px solid #232327;border-left:3px solid var(--amber);border-radius:3px;padding:12px 14px;background:#0b0b0c}
+.tl-p h4{margin:0 0 4px;font:700 12px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--amber)}
+.tl-g{margin:0 0 6px;color:var(--ink)}
+.tl-f{margin:0 0 8px;color:var(--muted);font-size:13px}
+.tl-f span{font:700 9.5px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin-right:8px}
+.tl-p ol{margin:0;padding-left:20px;display:grid;gap:8px}
+.tl-p li b{display:block}
+.tl-p li span{display:block;color:var(--muted);font-size:13.5px}
+.tl-s{margin-top:5px;padding:5px 10px;background:transparent;border:1px solid #2a2a2e;border-radius:2px;color:var(--ink);font-size:13px;cursor:pointer}
+.tl-s:hover{border-color:var(--red)}
+.tl-son{margin:2px 0 0;color:var(--muted);font-size:13px}
 /* WhatsApp mesajları */
 .wa{display:grid;gap:8px;margin-top:6px}
 .wa-m{border:1px solid #232327;border-left:3px solid #25d366;border-radius:3px;padding:10px 12px;background:#0b0b0c}
@@ -441,7 +454,7 @@ function sideAlt(r){
   $("#faylBas").textContent = ad + (r.uzlasma ? " · " + r.dovr_sonu.split("-").reverse().join(".") : "");
 }
 // Server versiyası: kod yenilənib, server köhnə qalıbsa, bu yazı köhnə versiyanı göstərir
-const UI_VERSIYA = "1.9.0";
+const UI_VERSIYA = "1.10.0";
 function versiyaCiz(r){
   let el = $("#versiya");
   if(!el){ el = document.createElement("div"); el.id = "versiya"; el.style.cssText = "font:10.5px var(--mono);color:var(--dim);padding:6px 8px 0"; $("#yan").appendChild(el); }
@@ -539,7 +552,8 @@ $("#peseForm").onsubmit = async e => {
   const j = await r.json().catch(() => ({}));
   if(!r.ok){ $("#peseXeta").textContent = j.detail || "Yadda saxlanmadı, yenidən cəhd edin."; return; }
   pesePrf = j.profil; $("#pesePenc").hidden = true;
-  veziyyet();
+  await veziyyet();
+  if(j.telimat) gonder("Təlimat");  // seçilmiş peşəyə görə istifadə təlimatı
 };
 
 // ---------- mətn formatı (sadə markdown) ----------
@@ -578,6 +592,13 @@ function mektub(u){
     <textarea>${esc(u.metn)}</textarea>
     <div class="duymeler"><button type="button" class="kicik" data-kopyala>Kopyala</button><a class="duyme" href="${mailto(u.kime, u.movzu, u.metn)}" data-mailto>E-poçtda aç</a></div></div>`;
 }
+// Peşəyə görə istifadə təlimatı: hər peşə üçün giriş, lazım olan fayl və addımlar (nümunə sorğu düymədir)
+function telimatHtml(u){
+  return `<div class="tl">` + u.peseler.map(p => `<div class="tl-p"><h4>${esc(p.ad)}</h4><p class="tl-g">${esc(p.giris)}</p>
+    <p class="tl-f"><span>Fayl</span>${esc(p.fayl)}</p><ol>${p.addimlar.map(a => `<li><b>${esc(a.b)}</b><span>${esc(a.m)}</span>
+    ${a.s ? `<button type="button" class="tl-s" data-tl="${esc(a.s)}">▸ ${esc(a.s)}</button>` : ""}</li>`).join("")}</ol></div>`).join("") +
+    `<p class="tl-son">${esc(u.son)}</p></div>`;
+}
 // WhatsApp mesajları: kimə, nömrə, mətn; link (əl ilə göndərmə) və ya göndərmə vəziyyəti
 function whatsapp(u){
   const k = u.kartlar.map(m => `<div class="wa-m"><div class="wa-b"><span class="wa-kime">${esc(m.kime)}</span><b>${esc(m.ad)}</b><span class="wa-tel">${esc(m.tel || "")}</span></div>
@@ -594,6 +615,7 @@ function uiBlok(u){
   if(u.tip === "fayllar") return `<div class="fayllar">${u.fayllar.map(f => `<a class="duyme" href="${esc(f.url)}" download>⬇ ${esc(f.ad)}</a>`).join(" ")}</div>`;
   if(u.tip === "kartlar") return kartlarHtml(u);
   if(u.tip === "whatsapp") return whatsapp(u);
+  if(u.tip === "telimat") return telimatHtml(u);
   if(u.tip === "bloklar") return (u.bloklar || []).map(uiBlok).join("");
   if(u.tip === "sual") return `<div class="sual-v">${u.variantlar.map(v =>
     `<button type="button" class="sv ${v.esas ? "esas" : ""} ${v.ikinci ? "ikinci" : ""}" data-sual="${esc(v.mesaj)}">${esc(v.etiket)}</button>`).join("")}</div>`;
@@ -858,6 +880,8 @@ async function isiIzle(is){
 
 // ---------- cədvəl düymələri ----------
 $("#sohbet").addEventListener("click", async e => {
+  const tl = e.target.closest("button[data-tl]");  // təlimatdakı nümunə sorğu: dəfələrlə basmaq olar
+  if(tl){ if(!mesgul) gonder(tl.dataset.tl); return; }
   const sv = e.target.closest("button[data-sual]");
   if(sv){ if(mesgul) return; sv.closest(".sual-v").classList.add("cavablandi"); gonder(sv.dataset.sual); return; }
   const b = e.target.closest("button[data-q2]");

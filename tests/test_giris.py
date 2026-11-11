@@ -487,3 +487,25 @@ def test_hekim_teleb_yazir_rehber_tesdiq_edir():
     assert r["cavab"].startswith(f"Oldu: {no} — təsdiqləndi")
     r = hekim.post("/api/sohbet", json={"mesaj": "Stok tələblərini göstər"}).json()
     assert any(x[0] == no and x[4] == "təsdiqləndi" for x in r["hadiseler"][0]["ui"]["setirler"])   # həkim nəticəni görür
+
+
+def test_peseye_gore_telimat():
+    """Peşə seçiləndə təlimat qaytarılır; «Təlimat» yazanda yenidən açılır; nümunə sorğuların hamısı işləyir."""
+    from assistant import profil as PR
+    from assistant.modullar import AKTIV
+    from assistant.tools import norm
+    assert set(PR.TELIMATLAR) == {p["kod"] for p in PR.PESELER}                    # hər peşənin təlimatı var
+    isleyen = {norm(t["s"]) for m in AKTIV for t in m.MODUL["teklifler"]} | {norm(h["s"]) for p in PR.PESELER for h in p["heller"]}
+    for kod, t in PR.TELIMATLAR.items():
+        assert t["giris"] and t["fayl"] and t["addimlar"], kod
+        for a in t["addimlar"]:
+            assert a["b"] and a["m"], kod
+            assert "s" not in a or norm(a["s"]) in isleyen, (kod, a["s"])
+    _qur()
+    c = TestClient(app)
+    _gir(c, "aynur", "Parol1")
+    r = c.put("/api/profil", json={"peseler": ["dis_hekimi", "klinika_rehber"]}).json()
+    assert [p["ad"] for p in r["telimat"]["peseler"]] == ["Diş həkimi", "Diş klinikasının rəhbəri"]
+    r = c.post("/api/sohbet", json={"mesaj": "Təlimat"}).json()                       # fayl yüklənməyib, yenə də açılır
+    ui = r["hadiseler"][0]["ui"]
+    assert ui["tip"] == "telimat" and ui["peseler"][0]["addimlar"][0]["s"] == "Stoka tələb yaz"

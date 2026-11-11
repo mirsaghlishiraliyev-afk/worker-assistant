@@ -224,7 +224,8 @@ def profil_al():
 @app.put("/api/profil")
 def profil_saxla(p: Profil):
     try:
-        return {"profil": PR.saxla(_CARI.get(), p.peseler)}
+        prf = PR.saxla(_CARI.get(), p.peseler)
+        return {"profil": prf, "telimat": PR.telimat(prf)}
     except ValueError as e:
         raise HTTPException(400, str(e))
 
@@ -386,6 +387,10 @@ def sohbet(m: Mesaj):
     if sablon:
         S.tarixce += [{"role": "user", "content": m.mesaj}, {"role": "assistant", "content": sablon}]
         return {"cavab": sablon, "hadiseler": []}
+    if re.fullmatch(r"\s*(telimat|telimati goster|nece istifade edim|istifade telimati)\s*[?!.]*\s*", T.norm(m.mesaj)):
+        t = PR.telimat(PR.al(_CARI.get()))  # peşəyə görə təlimat (fayl lazım deyil)
+        cavab = "Peşənizə görə istifadə təlimatı:" if t else "Əvvəlcə peşənizi seçin — yan paneldə «Peşələrim»."
+        return {"cavab": cavab, "hadiseler": [{"alet": "telimat", "args": {}, "ui": t}] if t else []}
     plan = TELEB.qayda(S, m.mesaj)  # stoka tələb: fayl lazım deyil
     if plan:
         netice = T.cagir(S, plan[0], plan[1])
