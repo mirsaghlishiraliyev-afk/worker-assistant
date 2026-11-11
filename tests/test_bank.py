@@ -269,3 +269,48 @@ def test_her_kateqoriyanin_maddesi_sorusulur():
 
 def T_cagir(s, plan):
     return getattr(B, plan[0])(s, **plan[1])
+
+
+def test_hamisina_eyni_madde():
+    """Mühasibin ssenarisi: sığortaya «F-011», sonra «Hamısına F-011» — qalan kateqoriyalar bir daha soruşulmur."""
+    import openpyxl
+    B.QAYDA_FAYLI, B.HESABAT_QOVLUGU = QOV / "hamisina.json", QOV
+
+    class K:
+        bank = B.oxu(KAPITAL)
+    k = K()
+    n = B.bank_hesabat(k)
+    assert k.bank["madde_gozle"]["kod"] == "sigorta_haqqi"
+    n = B.bank_madde(k, **B.qayda(k, "F-011")[1])                                   # dırnaqsız ad
+    assert n["ui"]["tip"] == "sual" and k.bank["madde_gozle"]["kod"] != "sigorta_haqqi"
+    assert any(v["etiket"] == "Bütün qalanlara «F-011»" and v["mesaj"] == "Hamısına F-011" for v in n["ui"]["variantlar"])
+    plan = B.qayda(k, "Hamısına F-011")
+    assert plan == ("bank_madde_hamisi", {"madde": "F-011"})
+    n = B.bank_madde_hamisi(k, **plan[1])
+    assert "fayllar" in n["ui"]                                                     # bir daha soruşmadı: fayl hazırdır
+    wb = openpyxl.load_workbook(QOV / n["ui"]["fayllar"][1]["ad"])
+    xu = {r[0]: r[4] for r in wb["Xülasə"].iter_rows(min_row=6, values_only=True) if r[0] and r[1]}
+    assert all(v == "F-011" for a, v in xu.items() if a not in ("Yoxlanmalı", "Cəmi")), xu
+    assert B._madde("telim") == "F-011"                                             # yadda qalıb, «Hamısına F-011» yox
+
+
+def test_emr_madde_adi_sayilmir():
+    B.QAYDA_FAYLI, B.HESABAT_QOVLUGU = QOV / "emr.json", QOV
+
+    class K:
+        bank = B.oxu(KAPITAL)
+    k = K()
+    B.bank_hesabat(k)
+    assert B.qayda(k, "Şablonu doldur")[0] == "bank_hesabat"                         # əmrdir — sual yenidən verilir
+    assert B.qayda(k, "1C üçün Excel hazırla")[0] == "bank_hesabat"
+    assert "maddənin adına bənzəmir" in B.bank_madde(k, "sigorta_haqqi", "Şablonu doldur")["metn"]
+    assert B._madde("sigorta_haqqi") == ""
+
+
+def test_sehv_saxlanmis_adlar_temizlenir():
+    """Əvvəlki versiyada səhvən saxlanmış adlar: «Hamısına F-011» -> «F-011», «Şablonu doldur» atılır."""
+    B.QAYDA_FAYLI = QOV / "kohne.json"
+    B._qaydalar_yaz({"odeyici": {}, "madde": {"subroqasiya": "Hamısına F-011", "telim": "Şablonu doldur"},
+                     "madde_tarixce": {"sigorta_haqqi": ["Şablonu doldur", "F-011"], "subroqasiya": ["Hamısına F-011"]}})
+    assert B._madde("subroqasiya") == "F-011" and B._madde("telim") == ""
+    assert B._teklifler("sigorta_haqqi")[0] == "F-011" and "Şablonu doldur" not in B._teklifler("sigorta_haqqi")

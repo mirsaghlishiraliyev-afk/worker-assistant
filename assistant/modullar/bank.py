@@ -86,11 +86,29 @@ IBAN_RE = re.compile(r"\bAZ\d{2}[A-Z]{4}[A-Z0-9]{20}\b")
 
 
 # ======================= qaydalar (öyrənmə) =======================
+# maddə sualı açıq olanda bu sözlər maddənin adı deyil, əmrdir («Şablonu doldur», «1C üçün Excel hazırla»…)
+KOMANDA_RE = re.compile(r"\?|goster|xulase|sual|yoxlan|xeberdar|hazirla|doldur|sablon|\b1c\b|inteqrasiya|hesabat|excel|muqavilesiz")
+AD_DEYIL_RE = re.compile(r"\?|goster|xulase|hazirla|doldur|sablon|sual(lari)? ver")  # bunlar maddə adı ola bilməz
+HAMISINA_RE = re.compile(r"^\s*(?:ham[ıi]s[ıi]na|ham[ıi]s[ıi]\s+üçün|ham[ıi]s[ıi]\s+ucun|bütün\s+(?:qalan\w*|kateqoriya\w*)|"
+                         r"butun\s+(?:qalan\w*|kateqoriya\w*)|qalanlar[ıi]na|eyni\s+maddə)\s*(?:eyni)?\s*[:\-—]?\s*(.*)$", re.I)
+
+
+def _temiz(ad):
+    """Səhvən saxlanmış maddə adlarını düzəldir: «Hamısına F-011» -> «F-011»; əmr («Şablonu doldur») -> None."""
+    ad = str(ad or "").strip()
+    m = HAMISINA_RE.match(ad)
+    if m:
+        ad = m.group(1).strip().strip("«»\"'").strip()
+    return None if not ad or AD_DEYIL_RE.search(norm(ad)) else ad
+
+
 def _qaydalar():
     if QAYDA_FAYLI and pathlib.Path(QAYDA_FAYLI).exists():
         try:
             d = json.loads(pathlib.Path(QAYDA_FAYLI).read_text(encoding="utf-8"))
-            return {"odeyici": d.get("odeyici", {}), "madde": d.get("madde", {}), "madde_tarixce": d.get("madde_tarixce", {})}
+            madde = {k: _temiz(v) for k, v in d.get("madde", {}).items()}
+            tarixce = {k: list(dict.fromkeys(x for x in map(_temiz, v) if x)) for k, v in d.get("madde_tarixce", {}).items()}
+            return {"odeyici": d.get("odeyici", {}), "madde": {k: v for k, v in madde.items() if v}, "madde_tarixce": tarixce}
         except (ValueError, OSError):
             pass
     return {"odeyici": {}, "madde": {}, "madde_tarixce": {}}
@@ -533,6 +551,9 @@ def bank_madde(s, kateqoriya, madde):
     madde = madde.strip().strip("«»\"'").strip()
     if not madde:
         return {"metn": "Maddənin adı boşdur — 1C-dəki adı yazın.", "ui": None}
+    if not _temiz(madde) or HAMISINA_RE.match(madde):
+        return {"metn": f"«{madde}» maddənin adına bənzəmir. 1C-dəki maddənin adını yazın; hamısına eyni ad üçün: «Hamısına F-011».",
+                "ui": None}
     q = _qaydalar()
     q["madde"][kod] = madde
     evvel = [x for x in q["madde_tarixce"].get(kod, []) if x != madde]
@@ -545,6 +566,32 @@ def bank_madde(s, kateqoriya, madde):
     else:
         metn = f"Oldu: «{_kat(kod)['ad']}» üçün maddə «{madde}» olaraq yadda saxlandı."
     return _davam(s, kod, metn)
+
+
+def bank_madde_hamisi(s, madde):
+    """Bu doldurmada maddəsi soruşulacaq bütün qalan kateqoriyalara eyni ad (və yadda saxlanır)."""
+    b = getattr(s, "bank", None)
+    if not b:
+        return _yoxdur()
+    g = b.get("madde_gozle") or {}
+    madde = str(madde or "").strip().strip("«»\"'").strip()
+    if not madde:  # «Hamısına eyni» — son seçilən ad
+        madde = list((b.get("madde_secim") or {}).values())[-1] if b.get("madde_secim") else ""
+    if not madde or not _temiz(madde):
+        return {"metn": "Hansı ad? Məs.: «Hamısına F-011».", "ui": None}
+    secim, bos = b.setdefault("madde_secim", {}), b.get("madde_bos", [])
+    q = _qaydalar()
+    kodlar = [k["kod"] for k in KATEQORIYALAR if k["kod"] not in secim and k["kod"] not in bos
+              and any(r["kateqoriya"] == k["kod"] for r in b["setirler"])]
+    for kod in kodlar:
+        secim[kod] = madde
+        q["madde"][kod] = madde
+        q["madde_tarixce"][kod] = [madde] + [x for x in q["madde_tarixce"].get(kod, []) if x != madde][:4]
+    _qaydalar_yaz(q)
+    b.pop("madde_gozle", None)
+    adlar = ", ".join(_kat(k)["ad"] for k in kodlar)
+    n = bank_hesabat(s, muqavilesiz=g.get("muqavilesiz", False))
+    return {"metn": f"Oldu: «{madde}» qalan bütün kateqoriyalara yazılır ({adlar}).\n\n" + n["metn"], "ui": n["ui"]}
 
 
 def _davam(s, kod, metn):
@@ -601,11 +648,14 @@ def _madde_suali(b, kod, muqavilesiz, say):
     variantlar = [{"etiket": f"«{x}»" + (" (son dəfə)" if tarixce and x == tarixce[0] else ""),
                    "mesaj": f"{k['ad']} maddəsi \"{x}\" olsun", **({"esas": True} if i == 0 else {})}
                   for i, x in enumerate(_teklifler(kod))]
+    son = list((b.get("madde_secim") or {}).values())[-1:] or [None]
+    if son[0]:  # əvvəlki sualda seçilən ad: qalan kateqoriyaların hamısına bir düymə ilə
+        variantlar.append({"etiket": f"Bütün qalanlara «{son[0]}»", "mesaj": f"Hamısına {son[0]}"})
     if kod != "sigorta_haqqi":
         variantlar.append({"etiket": "Bu dəfə boş qalsın", "mesaj": f"{k['ad']} maddəsi boş qalsın", "ikinci": True})
     variantlar.append({"etiket": "Ləğv et", "mesaj": "Maddəni sonra deyərəm", "ikinci": True})
     return {"metn": harada + " Təkliflərdən birini seçin və ya 1C-dəki adı özünüz yazın — ad 1C-dəki maddə ilə "
-                    "hərfi-hərfinə eyni olmalıdır, yoxsa 1C sətri tanımayacaq.",
+                    "hərfi-hərfinə eyni olmalıdır, yoxsa 1C sətri tanımayacaq. Hamısına eyni ad üçün: «Hamısına <ad>».",
             "ui": {"tip": "sual", "variantlar": variantlar}}
 
 
@@ -833,8 +883,13 @@ def qayda(s, mesaj):
             return "bank_xulase", {}
         if re.search(r"bos qalsin|bos saxla|bos olsun|bos burax", n):
             return "bank_madde_bos", {"kateqoriya": kod}
+        hm = HAMISINA_RE.match(mesaj)
+        if hm:  # «Hamısına F-011»: qalan bütün kateqoriyalara eyni ad
+            return "bank_madde_hamisi", {"madde": hm.group(1)}
         sitat0 = re.search(r"[«\"']([^»\"']+)[»\"']", mesaj)
-        if sitat0 or (len(n.split()) <= 8 and not re.search(r"\?|goster|xulase|sual|yoxlan|xeberdar|hazirla", n)
+        if not sitat0 and KOMANDA_RE.search(n) and not re.search(r"madde", n):  # «Şablonu doldur» və s. — əmrdir, ad deyil
+            return "bank_hesabat", {"muqavilesiz": gozle.get("muqavilesiz", False)}
+        if sitat0 or (len(n.split()) <= 8 and not KOMANDA_RE.search(n)
                       and not re.fullmatch(r"\s*(beli|he|hə|xeyr|yox|ok|oldu|duzdur)\W*", n)):
             return "bank_madde", {"kateqoriya": kod, "madde": sitat0.group(1) if sitat0 else mesaj}
     if m and re.search(r"dir|dur|dır|dür|olsun|kimi|yaz|deyis|kecir|\bdi\b|aiddir", n):
@@ -896,6 +951,8 @@ ALETLER = {
     "bank_kec": (bank_kec, "Sualı sonraya saxlayır və növbəti sualı verir.", {"setir": {"type": "integer"}}),
     "bank_madde": (bank_madde, "Kateqoriyanın pul vəsaitinin maddəsini 1C-dəki adla eyniləşdirir.",
                    {"kateqoriya": _kateq, "madde": {"type": "string"}}),
+    "bank_madde_hamisi": (bank_madde_hamisi, "Maddə soruşulan bütün qalan kateqoriyalara eyni ad yazır (istifadəçi «hamısına X» deyəndə).",
+                          {"madde": {"type": "string"}}),
     "bank_madde_bos": (bank_madde_bos, "Mühasib maddəni bilmir: kateqoriyanın maddə sütunu bu dəfə boş qalır, 1C faylının hazırlanması davam edir.",
                        {"kateqoriya": _kateq}),
     "bank_hesabat": (bank_hesabat, "1C üçün Excel: sığorta haqqı inteqrasiya faylı (HS-/BS- müqavilə nömrəli sətirlər) və yoxlama faylı. "
