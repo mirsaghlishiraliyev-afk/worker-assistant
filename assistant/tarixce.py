@@ -53,7 +53,7 @@ def _refler(fayllar):
     out = {}
     for f in fayllar or []:
         if isinstance(f, dict) and re.fullmatch(r"[a-z0-9]{1,32}", str(f.get("id", ""))):
-            out[f["id"]] = {"id": f["id"], "ad": str(f.get("ad", ""))[:200], "nov": "sablon" if f.get("nov") == "sablon" else "fayl"}
+            out[f["id"]] = {"id": f["id"], "ad": str(f.get("ad", ""))[:200], "nov": f.get("nov") if f.get("nov") in ("sablon", "muqavile") else "fayl"}
     return list(out.values())[-20:]
 
 

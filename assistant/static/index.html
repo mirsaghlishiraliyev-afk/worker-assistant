@@ -458,7 +458,7 @@ $("#tarixce").addEventListener("click", async e => {
   $("#sohbet").innerHTML = ""; aktiv.mesajlar.forEach(m => m.rol === "user" ? userMsj(m.metn) : m.rol === "fayl" ? faylRefMsj(m) : aiMsj(m, false));
   $("#main").classList.toggle("bos", !aktiv.mesajlar.length); tarixceCiz();
   // söhbətin faylı: hazırda başqa fayl açıqdırsa, söhbətin son faylı səssizcə yenidən açılır (söhbəti davam etdirmək üçün)
-  const son = [...aktiv.fayllar].reverse().find(f => f.nov !== "sablon") || aktiv.fayllar[aktiv.fayllar.length - 1];
+  const son = [...aktiv.fayllar].reverse().find(f => f.nov === "fayl") || aktiv.fayllar[aktiv.fayllar.length - 1];
   if(son && son.id !== aktivFayl && !mesgul) faylAc(son, true);
 });
 
@@ -470,7 +470,7 @@ function sohbetYarat(ad){
 function faylRefMsj(m){
   const d = document.createElement("div"); d.className = "msj fref";
   d.innerHTML = `<div class="fref-q">${(m.fayllar || []).map(f => `<span class="fref-f" title="${esc(f.ad)}">
-      <span class="fref-ik">${f.nov === "sablon" ? "📋" : "📎"}</span><b>${esc(f.ad)}</b>
+      <span class="fref-ik">${f.nov === "sablon" ? "📋" : f.nov === "muqavile" ? "📑" : "📎"}</span><b>${esc(f.ad)}</b>
       <button type="button" class="fref-ac" data-fref="${esc(f.id)}" data-ad="${esc(f.ad)}" data-nov="${esc(f.nov || "fayl")}">Aç</button></span>`).join("")}
     ${m.vaxt ? `<span class="fref-vx">${esc(vaxtF(m.vaxt))}</span>` : ""}</div>`;
   $("#sohbet").appendChild(d); return d;
@@ -478,7 +478,7 @@ function faylRefMsj(m){
 function faylRefQeyd(refler){
   if(!refler?.length) return;
   $("#main").classList.remove("bos");
-  if(!aktiv) sohbetYarat(refler.find(f => f.nov !== "sablon")?.ad || refler[0].ad);
+  if(!aktiv) sohbetYarat((refler.find(f => f.nov === "fayl") || refler[0]).ad);  // söhbətin adı — əsas faylın (çıxarışın) adı
   aktiv.fayllar = [...(aktiv.fayllar || []).filter(f => !refler.some(r => r.id === f.id)), ...refler];
   const m = {rol: "fayl", fayllar: refler, vaxt: Date.now() / 1000};
   aktiv.mesajlar.push(m); faylRefMsj(m); saxla();
@@ -521,7 +521,7 @@ function sideAlt(r){
   $("#faylBas").textContent = ad + (r.uzlasma ? " · " + r.dovr_sonu.split("-").reverse().join(".") : "");
 }
 // Server versiyası: kod yenilənib, server köhnə qalıbsa, bu yazı köhnə versiyanı göstərir
-const UI_VERSIYA = "1.16.0";
+const UI_VERSIYA = "1.17.0";
 function versiyaCiz(r){
   let el = $("#versiya");
   if(!el){ el = document.createElement("div"); el.id = "versiya"; $("#yan").appendChild(el); }
@@ -830,7 +830,7 @@ async function fayllariYukle(){
   try { fayllar = await fetch("/api/fayllar").then(r => r.ok ? r.json() : []); } catch { fayllar = []; }
   $("#fayllarim").innerHTML = fayllar.length ? fayllar.slice(0, 30).map(f =>
     `<div class="fl ${f.id === aktivFayl ? "aktiv" : ""}" data-fid="${esc(f.id)}" title="${esc(f.ad)} — açmaq üçün basın">
-      <span>${f.nov === "sablon" ? "📋" : "📊"}</span><span class="ad">${esc(f.ad)}</span><span class="vx">${esc(vaxtF(f.vaxt))}</span>
+      <span>${f.nov === "sablon" ? "📋" : f.nov === "muqavile" ? "📑" : "📊"}</span><span class="ad">${esc(f.ad)}</span><span class="vx">${esc(vaxtF(f.vaxt))}</span>
       <button class="sil" data-fsil="${esc(f.id)}" title="Sil">✕</button></div>`).join("")
     : `<div class="bos-q">Hələ fayl yükləməmisiniz</div>`;
 }
@@ -915,7 +915,7 @@ async function isiIzle(is, sessiz = false){
     $("#eSt").textContent = st.n ? `Oxunur: ${st.i}/${st.n} vərəq · ${st.vereq}` : "Oxunur və təhlil edilir…";
     basliq(st.n ? `Fayl oxunur… ${st.i}/${st.n} vərəq` : "Fayl oxunur…");
   }
-  const esasRef = (j.fayl_ref || []).find(f => f.nov !== "sablon"); if(esasRef) aktivFayl = esasRef.id;
+  const esasRef = (j.fayl_ref || []).find(f => f.nov === "fayl"); if(esasRef) aktivFayl = esasRef.id;
   fayllariYukle();
   sideAlt(j); hazirlarCiz(j.teklifler, j.fayl);
   if(sessiz){ faylVar = true; basliq(BASLIQ); $("#eSt").textContent = `Söhbətin faylı yenidən açıldı · ${j.fayl || ""}`; return; }
@@ -924,6 +924,17 @@ async function isiIzle(is, sessiz = false){
   $("#dovrQab").style.display = j.uzlasma ? "" : "none";
   if(j.uzlasma){ $("#dovr").value = j.dovr_sonu; sonDovr = j.dovr_sonu; }
   let mesaj, hadiseler;
+  // müqavilə faylı (müqavilə nömrəsi olmayan mədaxillər üçün)
+  const muqMetn = j.muqavile && secilmisFayllar.some(f => f.name === j.muqavile.ad)
+    ? `«${j.muqavile.ad}» müqavilə faylı kimi qəbul olundu: ${reqemF(j.muqavile.say)} müqavilə, ${reqemF(j.muqavile.uygun)}-i «Ödəniş gözləyir» və ya «Aktiv». ` +
+      "Müqavilə nömrəsi olmayan mədaxilləri Sığortalı Fin/Voen ilə bunlara tutuşduracağam; qərarı siz verəcəksiniz." : "";
+  if(j.yalniz_muqavile){
+    basliq(BASLIQ); faylVar = true; $("#main").classList.remove("bos");
+    $("#eSt").textContent = "Müqavilə faylı · bank çıxarışı gözlənilir";
+    await aiQeyd({cavab: muqMetn + (j.bank ? " İnteqrasiya üçün yazın: «1C üçün Excel hazırla»." : " İndi bank çıxarışını (və şablonu) yükləyin."), hadiseler: []});
+    return;
+  }
+  if(muqMetn) await aiQeyd({cavab: muqMetn, hadiseler: []});
   // inteqrasiya şablonu
   if(j.sablon && secilmisFayllar.some(f => f.name === j.sablon)){
     basliq(BASLIQ); faylVar = true; $("#main").classList.remove("bos");

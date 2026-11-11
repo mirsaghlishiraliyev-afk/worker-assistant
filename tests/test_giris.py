@@ -650,3 +650,32 @@ def test_serhden_sonra_kod_yoxdur():
     assert not pis, pis
     py = (pathlib.Path(__file__).resolve().parents[1] / "assistant" / "app.py").read_text(encoding="utf-8")
     assert not [s for s in py.splitlines() if re.search(r'#[^\n]*"\w+":\s', s)], "app.py: şərhin arxasında açar qalıb"
+
+
+def test_cixaris_sablon_ve_muqavile_birlikde():
+    """Çıxarış + şablon + müqavilə faylı birlikdə yüklənir; müqavilə faylı tanınır və uyğunlaşdırma sualı gəlir."""
+    import openpyxl
+    from assistant.modullar import bank as B
+    _qur()
+    c = TestClient(app)
+    _gir(c, "aynur", "Parol1")
+    sablon = pathlib.Path(tempfile.mkdtemp()) / "Sığorta haqqı inteqrasiya faylı.xlsx"
+    wb = openpyxl.Workbook()
+    wb.active.append(B.SUTUNLAR_1C)
+    wb.save(sablon)
+    fs = [("fayl", ("cixaris.xlsx", open(DATA / "bank_kapital_test.xlsx", "rb"))), ("fayl", (sablon.name, open(sablon, "rb"))),
+          ("fayl", ("query_result.xlsx", open(DATA / "muqavile_test.xlsx", "rb")))]
+    j = c.post("/api/yukle", files=fs).json()
+    for _ in range(100):
+        st = c.get(f"/api/yukle/{j['is']}").json()
+        if st["status"] != "isleyir":
+            break
+        time.sleep(0.1)
+    ne = st["netice"]
+    assert ne["bank"]["daxilolma"] == 9 and ne["sablon"] == sablon.name
+    assert ne["muqavile"] == {"ad": "query_result.xlsx", "say": 8, "uygun": 7}
+    assert {f["nov"] for f in ne["fayl_ref"]} == {"fayl", "sablon", "muqavile"}
+    sohbet = lambda m: c.post("/api/sohbet", json={"mesaj": m}).json()  # noqa: E731
+    sohbet("Şablonu doldur")
+    r = sohbet("İnteqrasiyaya bütün daxilolmalar")
+    assert r["cavab"].startswith("Müqavilə 1/4: 9-ci sətir") and "uyğundur" in r["cavab"]

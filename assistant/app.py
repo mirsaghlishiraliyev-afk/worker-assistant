@@ -262,6 +262,8 @@ def veziyyet(request: Request = None):
             "pese_effektiv": PR.effektiv(PR.al(_CARI.get())),
             "bildiris": TP.bildirisler(_CARI.get()),  # yeni tapşırıq, gecikən, cavab gözləyən sorğu
             "sablon": S.sablon["ad"] if getattr(S, "sablon", None) else None,
+            "muqavile": ({"ad": S.muqavileler["ad"], "say": len(S.muqavileler["siyahi"]),
+                          "uygun": sum(m["uygun"] for m in S.muqavileler["siyahi"])} if getattr(S, "muqavileler", None) else None),
             "bank": ({"daxilolma": len(S.bank["setirler"]), "yoxlanmali": sum(r["kateqoriya"] == "yoxlanmali" for r in S.bank["setirler"]),
                       "sual": len(BANK._sual_setirleri(S.bank)),
                       "cem": round(sum(r["mebleg"] for r in S.bank["setirler"]), 2)} if S.bank else None)}
@@ -293,7 +295,8 @@ def _is_baslat(yollar, dovr, rejim="", kitabxanaya=True, ref=None):
         try:
             with KILID:
                 sablonlar = [(y, a) for y, a in yollar if BANK.sablon_mi(y)]
-                esas = [(y, a) for y, a in yollar if (y, a) not in sablonlar]
+                muqler = [(y, a) for y, a in yollar if (y, a) not in sablonlar and BANK.muqavile_fayli_mi(y)]
+                esas = [(y, a) for y, a in yollar if (y, a) not in sablonlar and (y, a) not in muqler]
                 refler = list(ref or [])  # söhbətdə fayla istinad: «Fayllarım»dakı id ilə (sonra yenidən açmaq üçün)
                 if kitabxanaya:  # «Fayllarım»: kim nəyi yükləyib — yadda qalır
                     def _elave(y, a, nov):
@@ -301,15 +304,19 @@ def _is_baslat(yollar, dovr, rejim="", kitabxanaya=True, ref=None):
                         refler.append({"id": q["id"], "ad": a, "nov": nov})
                         return pathlib.Path(yol), a
                     sablonlar = [_elave(y, a, "sablon") for y, a in sablonlar]
+                    muqler = [_elave(y, a, "muqavile") for y, a in muqler]
                     esas = [_elave(y, a, "fayl") for y, a in esas]
                 if sablonlar:  # inteqrasiya şablonu: yadda saxlanır, 1C faylı onun üzərində doldurulur
                     S.sablon = {"yol": sablonlar[0][0], "ad": sablonlar[0][1]}
+                if muqler:  # müqavilələr: nömrəsi olmayan mədaxillər FİN ilə bunlara tutuşdurulur
+                    S.muqavileler = {"ad": muqler[0][1], "siyahi": BANK.muqavile_oxu(muqler[0][0])}
                 if esas:
-                    sablon = S.sablon
+                    sablon, muq = S.sablon, getattr(S, "muqavileler", None)
                     S.yukle(esas[0][0], dovr, orijinal_ad=esas[0][1], progress=progress)
-                    S.sablon = sablon
+                    S.sablon, S.muqavileler = sablon, muq
                 S.teklifler = TK.hazirla(S)  # fayla görə hazır sorğular
-            ISLER[is_id].update(status="hazir", netice={**veziyyet(), "yalniz_sablon": not esas, "fayl_ref": refler,
+            ISLER[is_id].update(status="hazir", netice={**veziyyet(), "yalniz_sablon": not esas and bool(sablonlar), "fayl_ref": refler,
+                                                         "yalniz_muqavile": not esas and not sablonlar and bool(muqler),
                                                          "fayllar": [a for _, a in yollar]})
         except Exception as e:
             ISLER[is_id].update(status="xeta", xeta=f"Fayl oxunmadı: {e}")

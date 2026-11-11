@@ -664,6 +664,159 @@ def _madde_suali(b, kod, muqavilesiz, say):
             "ui": {"tip": "sual", "variantlar": variantlar}}
 
 
+# ======================= müqavilə faylı (müqavilə nömrəsi olmayan mədaxillər üçün) =======================
+# Sığorta müqavilələrinin siyahısı (məs. sistemdən «query_result»): mədaxil Sığortalı Fin/Voen ilə müqaviləyə bağlanır,
+# məbləğ «Aqrar sığorta haqqı» ilə tutuşdurulur. Qərarı mühasib verir; seçilən nömrə inteqrasiya faylına yazılır.
+MUQ_ROLLAR = {"no": r"sigorta muqavilesinin nomresi|muqavile\w* nomre", "fin": r"sigortali fin|fin\s*/\s*voen",
+              "aqrar": r"aqrar sigorta haqqi", "status": r"^status", "ad": r"sigortali adi", "yekun": r"yekun sigorta haqqi"}
+MUQ_STATUSLAR = ("odenis gozleyir", "aktiv")  # yalnız bu statuslu müqavilələr uyğunlaşdırılır
+MUQ_DOZUM = 0.01
+
+
+def _muq_basliq(fayl):
+    from openpyxl import load_workbook
+    try:
+        wb = load_workbook(fayl, read_only=True)
+    except Exception:
+        return None
+    try:
+        if len(wb.sheetnames) > MAKS_VEREQ:
+            return None
+        for ws in wb.worksheets:
+            for i, row in zip(range(10), ws.iter_rows(max_row=10, values_only=True)):
+                cols = {}
+                for j, x in enumerate(row):
+                    if isinstance(x, str):
+                        for rol, ifade in MUQ_ROLLAR.items():
+                            if rol not in cols and re.search(ifade, norm(x).strip()):
+                                cols[rol] = j
+                if {"no", "fin", "aqrar"} <= set(cols):
+                    return ws.title, i, cols
+    finally:
+        wb.close()
+    return None
+
+
+def muqavile_fayli_mi(fayl):
+    return _muq_basliq(fayl) is not None
+
+
+def muqavile_oxu(fayl):
+    """Müqavilələr: [{no, fin, ad, aqrar, status, uygun}] — uygun: status «Ödəniş gözləyir» və ya «Aktiv»."""
+    vereq, i, cols = _muq_basliq(fayl)
+    df = pd.read_excel(fayl, sheet_name=vereq, header=None, skiprows=i + 1, dtype=object)
+    out = []
+    for r in df.itertuples(index=False):
+        def al(rol):
+            x = r[cols[rol]] if rol in cols and cols[rol] < len(r) else None
+            return None if x is None or (isinstance(x, float) and pd.isna(x)) else x
+        no, aqrar = str(al("no") or "").strip(), _reqem(al("aqrar"))
+        if not no or aqrar is None or pd.isna(aqrar):
+            continue
+        status = str(al("status") or "").strip()
+        out.append({"no": no.upper(), "fin": re.sub(r"\W", "", str(al("fin") or "")).upper(), "ad": str(al("ad") or "").strip(),
+                    "aqrar": round(float(aqrar), 2), "status": status,
+                    "uygun": not status or norm(status).strip() in MUQ_STATUSLAR})
+    return out
+
+
+def _fin(r):
+    return re.sub(r"\W", "", str(r.get("t_fin_voen") or r.get("fin") or r.get("voen") or "")).upper()
+
+
+def _namizedler(r, muqler, tutulan):
+    """Mədaxil üçün namizəd müqavilələr: FİN ilə (yoxdursa — adla); statusu uyğun; başqa sətrə verilməmiş."""
+    f = _fin(r)
+    ms = [m for m in muqler if m["uygun"] and m["no"] not in tutulan and f and m["fin"] == f]
+    if not ms and r.get("odeyici"):
+        ad = norm(r["odeyici"]).strip()
+        ms = [m for m in muqler if m["uygun"] and m["no"] not in tutulan and m["ad"] and norm(m["ad"]).strip() == ad]
+    return ms
+
+
+def muqavile_tehlil(r, ms):
+    """Mədaxilin müqavilələrlə tutuşdurulması: (nəticə, [variant]) — variant: {"nomreler", "cem", "ferq", "nov"}."""
+    from itertools import combinations
+    mebleg = r["mebleg"]
+    tek = [{"nomreler": [m["no"]], "cem": m["aqrar"], "ferq": round(mebleg - m["aqrar"], 2)} for m in ms]
+    deqiq = [v for v in tek if abs(v["ferq"]) <= MUQ_DOZUM]
+    if deqiq:
+        return "üst-üstə düşür", [dict(v, nov="deqiq") for v in deqiq]
+    kombo = []
+    maks = 4 if len(ms) <= 20 else (3 if len(ms) <= 60 else 2)
+    for k in range(2, min(maks, len(ms)) + 1):
+        for c in combinations(ms, k):
+            cem = round(sum(m["aqrar"] for m in c), 2)
+            if abs(cem - mebleg) <= MUQ_DOZUM:
+                kombo.append({"nomreler": [m["no"] for m in c], "cem": cem, "ferq": 0.0, "nov": "kombo"})
+                if len(kombo) >= 3:
+                    break
+        if kombo:
+            break
+    if kombo:
+        return f"uyğundur — {len(kombo[0]['nomreler'])} müqavilənin cəmi", kombo
+    yaxin = sorted(tek, key=lambda v: abs(v["ferq"]))
+    hedd = max(1.0, abs(mebleg) * 0.05)
+    if yaxin and abs(yaxin[0]["ferq"]) <= hedd:
+        return "yaxındır", [dict(v, nov="yaxin") for v in yaxin[:3] if abs(v["ferq"]) <= hedd]
+    return "uyğun məbləğ yoxdur", [dict(v, nov="uzaq") for v in yaxin[:3]]
+
+
+def _muq_suali(b, r, ms, novbe, cem):
+    netice, variantlar = muqavile_tehlil(r, ms)
+    b["muq_gozle"] = r["setir"]
+    tarix = f"{r['tarix']:%d.%m.%Y}" if r["tarix"] else ""
+    sira = "\n".join(f"- {m['no']} — Aqrar sığorta haqqı {_f(m['aqrar'])} ({m['status'] or 'status yoxdur'})" for m in ms[:8]) + \
+        (f"\n- … daha {len(ms) - 8} müqavilə" if len(ms) > 8 else "")
+    metn = (f"Müqavilə {novbe}/{cem}: {r['setir']}-ci sətir — {tarix}, **{_f(r['mebleg'])} AZN**, {r['odeyici'] or 'ödəyici yoxdur'}"
+            f" (FİN/VÖEN: {_fin(r) or '—'}). Bu FİN-ə {len(ms)} müqavilə var. Nəticə: **{netice}**.\n{sira}\n"
+            "Hansı müqaviləyə aiddir? Düyməni seçin və ya nömrəni yazın.")
+    isare = {"deqiq": "✓", "kombo": "✓", "yaxin": "≈", "uzaq": "≠"}
+    var = []
+    for v in variantlar:
+        nomre = " + ".join(v["nomreler"])
+        izah = "üst-üstə" if v["nov"] in ("deqiq", "kombo") else f"fərq {_f(v['ferq'])}"
+        var.append({"etiket": f"{isare[v['nov']]} {nomre} ({_f(v['cem'])}; {izah})",
+                    "mesaj": f"{r['setir']}-ci sətir müqaviləsi {', '.join(v['nomreler'])}", **({"esas": True} if v["nov"] in ("deqiq", "kombo") else {})})
+    var += [{"etiket": "Müqaviləsiz qalsın", "mesaj": f"{r['setir']}-ci sətir müqaviləsiz qalsın", "ikinci": True},
+            {"etiket": "Qalanlarını keç", "mesaj": "Qalan müqavilələri keç", "ikinci": True}]
+    return {"metn": metn, "ui": {"tip": "sual", "variantlar": var}}
+
+
+def bank_muqavile(s, setir, muqavile=""):
+    """Mühasibin qərarı: mədaxil (sətir) hansı müqaviləyə aiddir. muqavile: «BS-..., BS-...», «yox» (müqaviləsiz), «kec» (qalanlar)."""
+    b = getattr(s, "bank", None)
+    if not b:
+        return _yoxdur()
+    qerar = b.setdefault("muq_qerar", {})
+    if norm(str(muqavile)).strip() in ("kec", "qalanlar"):
+        b["muq_kec"] = True
+        b.pop("muq_gozle", None)
+        n = bank_hesabat(s)
+        return {"metn": "Oldu: qalan mədaxillər müqaviləsiz qalır.\n\n" + n["metn"], "ui": n["ui"]}
+    r = next((x for x in b["setirler"] if x["setir"] == int(setir)), None)
+    if not r:
+        return {"metn": f"{setir}-ci sətir daxilolmalar arasında yoxdur.", "ui": None}
+    if norm(str(muqavile)).strip() in ("yox", "muqavilesiz", ""):
+        qerar[str(r["setir"])] = []
+        metn = f"Oldu: {r['setir']}-ci sətir müqaviləsiz qalır."
+    else:
+        nomreler = [x.upper() for x in re.findall(r"[A-Za-z]{2}-\d{4,}(?:-[A-Za-z]{1,4})?", str(muqavile))]
+        if not nomreler:
+            return {"metn": f"«{muqavile}» müqavilə nömrəsi kimi oxunmadı (məs.: BS-2024210561-PS).", "ui": None}
+        muqler = {m["no"]: m for m in (getattr(s, "muqavileler", None) or {}).get("siyahi", [])}
+        if len(nomreler) == 1:
+            bolgu = [(nomreler[0], r["mebleg"])]  # bir müqavilə: ödənilən məbləğ olduğu kimi
+        else:  # bir neçə müqavilə: hər biri öz Aqrar sığorta haqqı ilə, qalıq sonuncuya
+            bolgu = [(n, muqler[n]["aqrar"] if n in muqler else 0.0) for n in nomreler]
+            bolgu[-1] = (bolgu[-1][0], round(r["mebleg"] - sum(x[1] for x in bolgu[:-1]), 2))
+        qerar[str(r["setir"])] = bolgu
+        metn = f"Oldu: {r['setir']}-ci sətir — " + ", ".join(f"{n} ({_f(m)})" for n, m in bolgu) + ". İnteqrasiya faylına yazılacaq."
+    b.pop("muq_gozle", None)
+    n = bank_hesabat(s)
+    return {"metn": metn + "\n\n" + n["metn"], "ui": n["ui"]}
+
+
 # ======================= inteqrasiya şablonu =======================
 def sablon_mi(fayl):
     """Fayl «Sığorta haqqı inteqrasiya faylı» şablonudursa: (vərəq, başlıq sətri, {sütun adı: sütun №}); deyilsə None."""
@@ -759,6 +912,19 @@ def bank_hesabat(s, muqavilesiz=False, ehate=None):
         return _ehate_suali(b, muqavilesiz)
     ehate = b["ehate"]
     muqavilesiz = muqavilesiz or ehate != "sigorta"  # bütün daxilolmalar: müqaviləsiz sığorta haqları da
+    # 1b) müqavilə faylı yüklənibsə: nömrəsi olmayan mədaxillər FİN ilə müqavilələrə tutuşdurulur, qərarı mühasib verir
+    muqler = (getattr(s, "muqavileler", None) or {}).get("siyahi", [])
+    qerar = b.setdefault("muq_qerar", {})
+    if muqler and not b.get("muq_kec"):
+        kodlar0 = _inteqrasiya_kodlari(b, ehate, True)
+        tutulan = {n for bolgu in qerar.values() for n, _ in bolgu}
+        sira = [r for r in b["setirler"] if not r["muqavile"] and r["kateqoriya"] in kodlar0
+                and (ehate != "sigorta" or r["kateqoriya"] == "sigorta_haqqi")]
+        sual = [(r, _namizedler(r, muqler, tutulan)) for r in sira if str(r["setir"]) not in qerar]
+        sual = [(r, ms) for r, ms in sual if ms]
+        if sual:
+            cem = len(sual) + sum(1 for k in qerar if any(str(r["setir"]) == k for r in sira))
+            return _muq_suali(b, sual[0][0], sual[0][1], cem - len(sual) + 1, cem)
     # 2) maddə — 1C-dəki adı sistem uydurmur və yaddaşdan götürmür: hər kateqoriya üçün hər doldurmada soruşur
     bos, secim = b.get("madde_bos", []), b.get("madde_secim", {})
     kodlar = _inteqrasiya_kodlari(b, ehate, muqavilesiz)
@@ -769,6 +935,7 @@ def bank_hesabat(s, muqavilesiz=False, ehate=None):
     b.pop("madde_secim", None)  # seçimlər yalnız bu fayl üçündür: növbəti doldurmada yenə soruşulur
     b.pop("ehate", None)
     b.pop("madde_bos", None)
+    b.pop("muq_kec", None)
 
     def md(kod):  # bu faylda mühasibin indi seçdiyi ad, yoxsa yadda saxlanan
         return secim.get(kod) or _qaydalar()["madde"].get(kod, "")
@@ -806,14 +973,18 @@ def bank_hesabat(s, muqavilesiz=False, ehate=None):
     def inteqrasiya(r):  # mühasibin seçdiyi sətirlər; maddəsi boş saxlanan kateqoriya və təkrar ola biləcəklər düşmür
         if r["setir"] in tekrar or r["kateqoriya"] not in kodlar or r["kateqoriya"] in bos:
             return False
-        return r["kateqoriya"] != "sigorta_haqqi" or bool(r["muqavile"] or muqavilesiz)
+        return r["kateqoriya"] != "sigorta_haqqi" or bool(r["muqavile"] or qerar.get(str(r["setir"])) or muqavilesiz)
     butun = b["setirler"] + (b.get("mexaricler", []) if ehate == "hamisi" else [])
 
-    def setir_1c(r):  # FİN/VÖEN və ödəyicinin hesabı təyinatdan götürülür
-        d = {"TARİX": r["tarix"], "Sığortalı Fin/Voen": r.get("t_fin_voen") or r.get("fin") or r["voen"],
-             "Sığorta müqaviləsinin nömrəsi": r["muqavile"], "HESAB NÖMRƏSİ": hesab_no,
-             "MƏBLƏĞ": r["mebleg"], "Pul vəsaitinin maddəsi": md(r["kateqoriya"])}
-        return [d.get(c, "") for c in SUTUNLAR_1C]
+    def setirler_1c(r):  # FİN/VÖEN və ödəyicinin hesabı təyinatdan; mühasibin seçdiyi müqavilələr — hər biri ayrıca sətir
+        bolgu = qerar.get(str(r["setir"])) or [(r["muqavile"], r["mebleg"])]
+        out = []
+        for nomre, mebleg in bolgu:
+            d = {"TARİX": r["tarix"], "Sığortalı Fin/Voen": r.get("t_fin_voen") or r.get("fin") or r["voen"],
+                 "Sığorta müqaviləsinin nömrəsi": nomre, "HESAB NÖMRƏSİ": hesab_no,
+                 "MƏBLƏĞ": mebleg, "Pul vəsaitinin maddəsi": md(r["kateqoriya"])}
+            out.append([d.get(c, "") for c in SUTUNLAR_1C])
+        return out
 
     def qeyd(r):
         return "; ".join(x for x in [("FİN/VÖEN təyinatda yoxdur" if not (r.get("t_fin_voen") or r.get("fin") or r["voen"]) else ""),
@@ -823,7 +994,8 @@ def bank_hesabat(s, muqavilesiz=False, ehate=None):
     w1.append(SUTUNLAR_1C + ["Çıxarış sətri", "Ödəyici", "Təyinat", "Qeyd"])
     for r in butun:
         if inteqrasiya(r):
-            w1.append(setir_1c(r) + [r["setir"], r["odeyici"], r["teyinat"], qeyd(r)])
+            for x in setirler_1c(r):
+                w1.append(x + [r["setir"], r["odeyici"], r["teyinat"], qeyd(r)])
     for c in w1[1][len(SUTUNLAR_1C):]:
         c.fill = PatternFill("solid", fgColor="E8E8E8")
     w2 = wb.create_sheet("Sığorta haqları (müqaviləsiz)")
@@ -875,8 +1047,9 @@ def bank_hesabat(s, muqavilesiz=False, ehate=None):
     sh = 0
     for r in butun:
         if inteqrasiya(r):
-            si.append(setir_1c(r))
-            sh += 1
+            for x in setirler_1c(r):
+                si.append(x)
+                sh += 1
     for row in si.iter_rows(min_row=2):
         row[0].number_format = "DD.MM.YYYY"
         row[SUTUNLAR_1C.index("MƏBLƏĞ")].number_format = "0.00"
@@ -886,7 +1059,7 @@ def bank_hesabat(s, muqavilesiz=False, ehate=None):
     sablon = getattr(s, "sablon", None)
     evvelki = 0
     if sablon:  # mühasibin yüklədiyi öz şablonu doldurulur (sütun sırası və formatı onun faylındakı kimi qalır)
-        ad_1c, evvelki = _sablonu_doldur(sablon, [setir_1c(r) for r in butun if inteqrasiya(r)], qovluq, vaxt)
+        ad_1c, evvelki = _sablonu_doldur(sablon, [x for r in butun if inteqrasiya(r) for x in setirler_1c(r)], qovluq, vaxt)
     else:
         wi.save(qovluq / ad_1c)
 
@@ -908,6 +1081,12 @@ def bank_hesabat(s, muqavilesiz=False, ehate=None):
     elif musz:
         bas += (f" Müqavilə nömrəsi (HS-/BS-) olmayan {musz} sığorta haqqı inteqrasiyaya düşmür — yoxlama faylında ayrıca vərəqdədir; "
                 f"onları da salmaq üçün yazın: «Müqaviləsizləri də şablona sal».")
+    secilen = {k: v for k, v in qerar.items() if v}
+    if muqler:
+        bas += (f" Müqavilə faylı üzrə: {len(secilen)} mədaxilə müqavilə nömrəsi yazıldı"
+                + (f" ({sum(len(v) for v in secilen.values())} sətir)" if secilen else "")
+                + (f", {sum(1 for v in qerar.values() if not v)} mədaxil mühasibin qərarı ilə müqaviləsiz qaldı" if any(not v for v in qerar.values()) else "")
+                + ".")
     maddeler = "; ".join(f"{_kat(k)['ad']} — «{md(k)}»" for k in kodlar if k not in bos)
     bas += f" Hesab nömrəsi: {hesab_no or '— (çıxarışda tapılmadı)'}. Maddələr: {maddeler}."
     bas += " Yanında yoxlama faylı da var" + (f" ({yox} sətir «Yoxlanmalı»)" if yox else "") + "."
@@ -925,6 +1104,17 @@ def qayda(s, mesaj):
     m = re.search(r"(\d+)\s*-?\s*(?:ci|cu|cı|cü|ci|nci|ncu|inci|uncu)?\s*set(?:ir|ri)|set(?:ir|ri)\s*(\d+)", n)
     if m and re.search(r"\bkec|sonra|atla", n):
         return "bank_kec", {"setir": int(m.group(1) or m.group(2))}
+    # sistem «bu mədaxil hansı müqaviləyə aiddir?» soruşub
+    mg = s.bank.get("muq_gozle")
+    if mg is not None:
+        sm = re.search(r"(\d+)\s*-?\s*(?:ci|cu|cı|cü|nci|ncu|inci|uncu)?\s*set(?:ir|ri)", n)
+        setir = int(sm.group(1)) if sm else mg
+        if re.search(r"qalan\w* (muqavile\w* )?kec|hamisini sonra", n):
+            return "bank_muqavile", {"setir": setir, "muqavile": "kec"}
+        if re.search(r"muqavilesiz|muqavile yoxdur|aid deyil", n):
+            return "bank_muqavile", {"setir": setir, "muqavile": "yox"}
+        if re.search(r"\b[a-z]{2}-\d{4,}", n):
+            return "bank_muqavile", {"setir": setir, "muqavile": mesaj}
     # sistem «inteqrasiyaya hansı sətirlər?» soruşub
     if s.bank.get("ehate_gozle") is not None and not m:
         eg = s.bank["ehate_gozle"]
@@ -1014,6 +1204,9 @@ ALETLER = {
     "bank_kec": (bank_kec, "Sualı sonraya saxlayır və növbəti sualı verir.", {"setir": {"type": "integer"}}),
     "bank_madde": (bank_madde, "Kateqoriyanın pul vəsaitinin maddəsini 1C-dəki adla eyniləşdirir.",
                    {"kateqoriya": _kateq, "madde": {"type": "string"}}),
+    "bank_muqavile": (bank_muqavile, "Mühasibin qərarı: müqavilə nömrəsi olmayan mədaxil (setir) hansı müqavilə(lər)ə aiddir; "
+                      "muqavile: 'BS-..., BS-...', 'yox' (müqaviləsiz) və ya 'kec' (qalanları keç).",
+                      {"setir": {"type": "integer"}, "muqavile": {"type": "string"}}),
     "bank_madde_hamisi": (bank_madde_hamisi, "Maddə soruşulan bütün qalan kateqoriyalara eyni ad yazır (istifadəçi «hamısına X» deyəndə).",
                           {"madde": {"type": "string"}}),
     "bank_madde_bos": (bank_madde_bos, "Mühasib maddəni bilmir: kateqoriyanın maddə sütunu bu dəfə boş qalır, 1C faylının hazırlanması davam edir.",
