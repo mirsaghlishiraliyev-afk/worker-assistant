@@ -17,6 +17,8 @@ COPY assistant ./assistant
 COPY uzlasma ./uzlasma
 COPY tools ./tools
 COPY tests ./tests
+# WhatsApp şablonlarının mətni (Meta-da eyni yaradılmalıdır); testlər koddakı mətnlə tutuşdurur
+COPY deploy/whatsapp_sablonlar.md ./deploy/
 
 # Build zamanı testlər: biri sınsa, obraz yaranmır (TeamCity build-i dayanır)
 RUN python -m pytest -q tests && rm -rf tests .pytest_cache
