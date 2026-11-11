@@ -67,6 +67,7 @@ aside.gizli{margin-left:-268px;box-shadow:none!important}
 .mod.plan{color:var(--dim)}.mod.plan .nq{background:#2a1010;box-shadow:none;animation:none;border:1px solid #3a1515}
 .mod .etiket{margin-left:auto;font:600 9.5px/1.8 var(--mono);text-transform:uppercase;letter-spacing:.14em;border:1px solid #3a2a0a;border-radius:2px;padding:0 6px;color:var(--amber);background:rgba(255,176,32,.06)}
 .side-alt{border-top:1px solid #1a1a1c;margin-top:8px;padding:12px 8px 4px;font:12px/1.7 var(--mono);color:var(--muted);display:flex;flex-direction:column;gap:2px}
+.side-alt[hidden]{display:none}
 .side-alt b{color:var(--red);font-weight:600;text-shadow:0 0 8px rgba(255,42,42,.6)}
 
 /* ---------- əsas ---------- */
@@ -313,7 +314,7 @@ a.wa-link{background:linear-gradient(180deg,#25d366,#128c4a);border-color:#25d36
     <div id="fayllarim"></div>
     <div class="bolme">Söhbətlər</div>
     <div id="tarixce"></div>
-    <div class="side-alt" id="sideAlt">Fayl yüklənməyib</div>
+    <div class="side-alt" id="sideAlt" hidden></div>
   </aside>
 
   <main class="bos" id="main">
@@ -441,7 +442,8 @@ if(innerWidth < 760) $("#yan").classList.add("gizli");
 
 // ---------- vəziyyət ----------
 function sideAlt(r){
-  if(!r?.hazir){ $("#sideAlt").innerHTML = "Fayl yüklənməyib. 📎 ilə əlavə edin."; $("#faylBas").textContent = ""; return; }
+  if(!r?.hazir){ $("#sideAlt").innerHTML = ""; $("#sideAlt").hidden = true; $("#faylBas").textContent = ""; return; }  // fayl yoxdur: boş qalır
+  $("#sideAlt").hidden = false;
   const ad = r.fayl, ex = r.excel || {};
   let html = `<div><b>${esc(ad)}</b></div><div>${esc(ex.vereq)} vərəq · ${esc(reqemF(ex.setir))} sətir</div>`;
   if(r.bank){
@@ -459,11 +461,10 @@ function sideAlt(r){
   $("#faylBas").textContent = ad + (r.uzlasma ? " · " + r.dovr_sonu.split("-").reverse().join(".") : "");
 }
 // Server versiyası: kod yenilənib, server köhnə qalıbsa, bu yazı köhnə versiyanı göstərir
-const UI_VERSIYA = "1.13.0";
+const UI_VERSIYA = "1.13.1";
 function versiyaCiz(r){
   let el = $("#versiya");
   if(!el){ el = document.createElement("div"); el.id = "versiya"; el.style.cssText = "font:10.5px var(--mono);color:var(--dim);padding:6px 8px 0"; $("#yan").appendChild(el); }
-  const kohne = r.versiya !== UI_VERSIYA;
   if(r.istifadeci){
     const ilk = !window.waIstifadeci;
     window.waIstifadeci = r.istifadeci;
@@ -477,8 +478,7 @@ function versiyaCiz(r){
   el.innerHTML = (u ? `<div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:4px;color:var(--text)">
       <span title="${esc(u.login)}">👤 ${esc(u.ad)}</span><a href="/cixis" style="color:var(--red);text-decoration:none">Çıxış</a></div>` : "") +
     `<div style="margin-bottom:4px"><a href="#" id="peseDeyis" style="color:var(--muted)">Peşələrim${pesePrf ? ": " + esc(peseAdlari().join(", ")) : ""}</a></div>` +
-    `Server v${esc(r.versiya || "?")} · başladı ${esc(r.baslama || "?")}` +
-    (kohne ? `<div style="color:var(--amber)">Server köhnə versiyadadır. Ctrl+C, sonra python -m assistant.</div>` : "");
+    `Versiya ${esc(r.versiya || UI_VERSIYA)}` + (r.baslama ? ` · başladı ${esc(r.baslama)}` : "");
 }
 // İstifadəçinin peşələrinə uyğun modullar öndə; boş ekrandakı nümunə sorğular da onlardan
 let pesePrf = null, peseSiyahisi = [], peseHelleri = [], peseEffektiv = [];

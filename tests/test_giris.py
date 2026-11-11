@@ -573,3 +573,15 @@ def test_modullar_peseye_aiddir():
     assert kodlar() == ["excel"]                                                     # «Müqavilələr» hələ işləmir
     c.put("/api/profil", json={"peseler": ["klinika_rehber"]})
     assert kodlar() == ["qebul", "stok", "teleb", "excel", "bank", "muhasibat"]      # rəhbərdən bank, mühasibat
+
+
+def test_veziyyet_versiyani_qaytarir():
+    """İnterfeys versiyanı və başlama vaxtını göstərir (v1.13.0-da şərh səhvi ilə itmişdi)."""
+    from assistant import __version__
+    _qur()
+    c = TestClient(app)
+    _gir(c, "aynur", "Parol1")
+    v = c.get("/api/veziyyet").json()
+    assert v["versiya"] == __version__ and v["baslama"] and v["modullar"]
+    html = c.get("/").text
+    assert f'const UI_VERSIYA = "{__version__}";' in html                            # interfeys və server eyni versiyada

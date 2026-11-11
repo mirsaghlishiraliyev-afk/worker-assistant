@@ -250,7 +250,8 @@ def veziyyet(request: Request = None):
         ex = {"ad": S.excel["ad"], "vereq": len(vv), "setir": sum(v["setir"] for v in vv.values())}
     return {"hazir": S.fayl_var, "uzlasma": S.hazir, "excel": ex, "fayl": S.excel["ad"] if S.excel else None,
             "dovr_sonu": S.dovr_sonu.isoformat() if S.dovr_sonu else None, "rejim": AI.ad, "rejim_kod": getattr(AI, "kod", "qayda"),
-            "modullar": PR.modul_siyahisi(T.modullar(), PR.al(_CARI.get())),  # yalnız peşəyə aid modullar "versiya": __version__, "baslama": f"{BASLAMA:%H:%M}",
+            "modullar": PR.modul_siyahisi(T.modullar(), PR.al(_CARI.get())),  # yalnız peşəyə aid modullar
+            "versiya": __version__, "baslama": f"{BASLAMA:%H:%M}",
             "xulase": T.xulase(S)["ui"] if S.hazir else None,
             "teklifler": getattr(S, "teklifler", []),
             "istifadeci": {"ad": u.get("a") or u["l"], "login": u["l"]} if u else None,
