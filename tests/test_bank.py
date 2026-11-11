@@ -22,11 +22,14 @@ def _madde_deyilib():  # mühasib bütün kateqoriyaların maddəsini deyib
     B._qaydalar_yaz({**B._qaydalar(), "madde": {k["kod"]: k["teklif"] for k in B.KATEQORIYALAR}})
 
 
-def _hazirla(s, **kw):  # 1C faylı: sığorta maddəsi hər dəfə soruşulur — ilk təkliflə cavab verilir
+def _hazirla(s, ehate="sigorta", **kw):  # 1C faylı: əvvəl «hansı sətirlər?», sonra hər kateqoriyanın maddəsi soruşulur
     n = B.bank_hesabat(s, **kw)
     while n["ui"]["tip"] == "sual":
+        if s.bank.get("ehate_gozle") is not None:
+            n = B.bank_hesabat(s, ehate=ehate, **kw)
+            continue
         kod = s.bank["madde_gozle"]["kod"]
-        n = B.bank_madde(s, kod, B._teklifler(kod)[0])
+        n = B.bank_madde(s, kod, (B._teklifler(kod) or [f"M {kod}"])[0])
     return n
 
 
@@ -213,16 +216,18 @@ def test_mushasibin_sablonunu_doldurur():
 def test_madde_muhasibden_sorusulur():
     import openpyxl
     B.QAYDA_FAYLI, B.HESABAT_QOVLUGU = QOV / "madde.json", QOV
-    _madde_deyilib()                                                                # digər kateqoriyalar artıq deyilib
 
     class K:
         bank = B.oxu(KAPITAL)
     k = K()
-    n = B.bank_hesabat(k, muqavilesiz=True)
-    assert "Pul vəsaitinin maddəsi" in n["metn"] and n["ui"]["tip"] == "sual"     # fayl hazırlanmır, soruşur
-    assert "bütün 2 sətrinə" in n["metn"]
-    etiketler = [v["etiket"] for v in n["ui"]["variantlar"]]
-    assert len(etiketler) >= 3 and etiketler[-1] == "Ləğv et"                       # bir neçə təklif
+    n = B.bank_hesabat(k)
+    assert "hansı sətirlər düşsün" in n["metn"] and n["ui"]["tip"] == "sual"       # əvvəl: inteqrasiyaya hansı sətirlər
+    assert [v["mesaj"] for v in n["ui"]["variantlar"]][:3] == [
+        "İnteqrasiyaya yalnız sığorta haqları", "İnteqrasiyaya bütün daxilolmalar", "İnteqrasiyaya bütün sətirlər"]
+    plan = B.qayda(k, "İnteqrasiyaya yalnız sığorta haqları")
+    assert plan == ("bank_hesabat", {"ehate": "sigorta", "muqavilesiz": False})
+    n = B.bank_hesabat(k, ehate="sigorta", muqavilesiz=True)
+    assert "Pul vəsaitinin maddəsi" in n["metn"] and "bütün 2 sətrinə" in n["metn"]
     plan = B.qayda(k, "Sığorta haqqı daxilolmaları")                               # mühasib öz adını əl ilə yazır
     assert plan == ("bank_madde", {"kateqoriya": "sigorta_haqqi", "madde": "Sığorta haqqı daxilolmaları"})
     n = B.bank_madde(k, **plan[1])
@@ -231,40 +236,51 @@ def test_madde_muhasibden_sorusulur():
     assert len(rows) == 3 and all(r[5] == "Sığorta haqqı daxilolmaları" for r in rows[1:])   # bütün sətirlərə
     assert rows[1][3] == "AZ00TEST0000000000000000000"
     n = B.bank_hesabat(k)                                                           # növbəti doldurmada yenə soruşur
-    assert n["ui"]["tip"] == "sual"
-    assert n["ui"]["variantlar"][0]["etiket"] == "«Sığorta haqqı daxilolmaları» (son dəfə)"   # əvvəlki seçim ilk təklifdir
+    assert "hansı sətirlər" in n["metn"]
+    n = B.bank_hesabat(k, ehate="sigorta")
+    assert not any("Sığorta haqqı daxilolmaları" in v["etiket"] for v in n["ui"]["variantlar"])   # əvvəlki seçim təklif edilmir
 
 
 def test_her_kateqoriyanin_maddesi_sorusulur():
+    """«Bütün daxilolmalar»: hər kateqoriyanın maddəsi soruşulur, hər doldurmada yenidən (yaddaşdan götürülmür)."""
     import openpyxl
     B.QAYDA_FAYLI, B.HESABAT_QOVLUGU = QOV / "madde_hamisi.json", QOV
 
     class K:
         bank = B.oxu(KAPITAL)
     k = K()
-    assert B._madde("telim") == ""                                                  # sistem ad uydurmur
+    B.bank_hesabat(k)
+    n = B.bank_hesabat(k, **B.qayda(k, "İnteqrasiyaya bütün daxilolmalar")[1])
     sorusulan = []
-    n = B.bank_hesabat(k)
-    while n["ui"]["tip"] == "sual":                                                 # hər kateqoriya üçün bir-bir soruşur
+    while n["ui"]["tip"] == "sual":
         kod = k.bank["madde_gozle"]["kod"]
         sorusulan.append(kod)
         cavab = "Faiz maddəsi boş qalsın" if kod == "faiz" else f"«1C {kod}»"
         plan = B.qayda(k, cavab)
         assert plan[1]["kateqoriya"] == kod
         n = T_cagir(k, plan)
-    assert sorusulan == ["sigorta_haqqi", "ezamiyye", "telim", "qaytarilma", "depozit", "faiz"]
-    wb = openpyxl.load_workbook(QOV / n["ui"]["fayllar"][1]["ad"])
-    assert wb["Təlim haqları"]["G2"].value == "1C telim"
-    assert wb["Depozit faizləri"]["G2"].value is None                               # mühasib boş saxladı
-    assert B._madde("faiz") == ""                                                   # boş saxlamaq yadda qalmır
-    n = B.bank_hesabat(k)                                                           # sığortanı yenə soruşur, digərlərini yox
-    assert n["ui"]["tip"] == "sual" and k.bank["madde_gozle"]["kod"] == "sigorta_haqqi"
-    assert "fayllar" in B.bank_madde(k, "sigorta_haqqi", "1C sigorta_haqqi")["ui"]
-    yeni = type("Y", (), {"bank": B.oxu(KAPITAL)})()
-    n = B.bank_hesabat(yeni)                                                        # yeni çıxarışda faizi yenə soruşur
-    while yeni.bank.get("madde_gozle", {}).get("kod") == "sigorta_haqqi":
-        n = B.bank_madde(yeni, "sigorta_haqqi", "1C sigorta_haqqi")
-    assert n["ui"]["tip"] == "sual" and yeni.bank["madde_gozle"]["kod"] == "faiz"
+    assert sorusulan == ["sigorta_haqqi", "ezamiyye", "telim", "qaytarilma", "depozit", "faiz", "yoxlanmali"]
+    rows = list(openpyxl.load_workbook(QOV / n["ui"]["fayllar"][0]["ad"])["Sheet1"].iter_rows(values_only=True))[1:]
+    assert len(rows) == 8                                                          # 9 daxilolma − faiz (maddəsi verilmədi)
+    assert {r[5] for r in rows} == {"1C sigorta_haqqi", "1C ezamiyye", "1C telim", "1C qaytarilma", "1C depozit", "1C yoxlanmali"}
+    assert "Depozit faizləri" in n["metn"] and "salınmadı" in n["metn"]
+    B.bank_hesabat(k)                                                               # növbəti doldurma: yenə hər şey soruşulur
+    n = B.bank_hesabat(k, ehate="daxilolma")
+    assert k.bank["madde_gozle"]["kod"] == "sigorta_haqqi"
+    assert not any("1C" in v["etiket"] for v in n["ui"]["variantlar"])           # əvvəlki ad təklif kimi göstərilmir
+
+
+def test_mexaric_de_inteqrasiyaya():
+    import openpyxl
+    B.QAYDA_FAYLI, B.HESABAT_QOVLUGU = QOV / "mexaric.json", QOV
+
+    class K:
+        bank = B.oxu(KAPITAL)
+    k = K()
+    assert len(k.bank["mexaricler"]) == 1 and k.bank["mexaricler"][0]["mebleg"] < 0   # məxaric ayrıca oxunur
+    n = _hazirla(k, ehate="hamisi")
+    rows = list(openpyxl.load_workbook(QOV / n["ui"]["fayllar"][0]["ad"])["Sheet1"].iter_rows(values_only=True))[1:]
+    assert len(rows) == 10 and any(r[4] < 0 and r[5] == "M mexaric" for r in rows)  # 9 daxilolma + 1 məxaric (mənfi)
 
 
 def T_cagir(s, plan):
@@ -279,7 +295,8 @@ def test_hamisina_eyni_madde():
     class K:
         bank = B.oxu(KAPITAL)
     k = K()
-    n = B.bank_hesabat(k)
+    B.bank_hesabat(k)
+    n = B.bank_hesabat(k, ehate="daxilolma")
     assert k.bank["madde_gozle"]["kod"] == "sigorta_haqqi"
     n = B.bank_madde(k, **B.qayda(k, "F-011")[1])                                   # dırnaqsız ad
     assert n["ui"]["tip"] == "sual" and k.bank["madde_gozle"]["kod"] != "sigorta_haqqi"
@@ -290,7 +307,7 @@ def test_hamisina_eyni_madde():
     assert "fayllar" in n["ui"]                                                     # bir daha soruşmadı: fayl hazırdır
     wb = openpyxl.load_workbook(QOV / n["ui"]["fayllar"][1]["ad"])
     xu = {r[0]: r[4] for r in wb["Xülasə"].iter_rows(min_row=6, values_only=True) if r[0] and r[1]}
-    assert all(v == "F-011" for a, v in xu.items() if a not in ("Yoxlanmalı", "Cəmi")), xu
+    assert all(v == "F-011" for a, v in xu.items() if a not in ("Cəmi",)), xu
     assert B._madde("telim") == "F-011"                                             # yadda qalıb, «Hamısına F-011» yox
 
 
@@ -313,4 +330,4 @@ def test_sehv_saxlanmis_adlar_temizlenir():
     B._qaydalar_yaz({"odeyici": {}, "madde": {"subroqasiya": "Hamısına F-011", "telim": "Şablonu doldur"},
                      "madde_tarixce": {"sigorta_haqqi": ["Şablonu doldur", "F-011"], "subroqasiya": ["Hamısına F-011"]}})
     assert B._madde("subroqasiya") == "F-011" and B._madde("telim") == ""
-    assert B._teklifler("sigorta_haqqi")[0] == "F-011" and "Şablonu doldur" not in B._teklifler("sigorta_haqqi")
+    assert "Şablonu doldur" not in B._teklifler("sigorta_haqqi")

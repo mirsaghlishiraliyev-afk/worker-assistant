@@ -51,6 +51,7 @@ KATEQORIYALAR = [
 ]
 ZEIF = {"subroqasiya", "qaytarilma"}  # bu kateqoriyalar həmişə «Orta» etibarla təklif olunur (mühasib baxsın)
 YOXLANMALI = {"kod": "yoxlanmali", "ad": "Yoxlanmalı", "teklif": "", "emal": "mühasib təyin etməlidir"}
+MEXARIC = {"kod": "mexaric", "ad": "Məxaric (çıxan ödənişlər)", "teklif": "", "emal": "inteqrasiyaya istəyə görə"}
 XEZINE = [r"xezinedar", r"\bdxa\b", r"казначейств", r"maliyye nazirliyi"]
 XEZINE_HESAB = re.compile(r"ctre", re.I)  # Dövlət Xəzinədarlığının hesabları (AZ..CTRE..)
 BANK_ADI = re.compile(r"kapital|\bbank\b", re.I)  # ödəyici yerində vasitəçi bank yazılır
@@ -121,7 +122,7 @@ def _qaydalar_yaz(d):
 
 
 def _kat(kod):
-    return next((k for k in KATEQORIYALAR if k["kod"] == kod), YOXLANMALI)
+    return MEXARIC if kod == "mexaric" else next((k for k in KATEQORIYALAR if k["kod"] == kod), YOXLANMALI)
 
 
 def _madde(kod):
@@ -272,7 +273,7 @@ def _oxu_vereq(fayl, vereq, i, rollar, ad):
     df = pd.read_excel(fayl, sheet_name=vereq, header=None, dtype=object)
     meta = _meta(df, i)
     basliqlar = [str(x) if x is not None else "" for x in df.iloc[i].tolist()]
-    setirler = []
+    setirler, mexaricler = [], []
     for k in range(i + 1, len(df)):
         r = df.iloc[k].tolist()
         def al(rol):
@@ -280,10 +281,13 @@ def _oxu_vereq(fayl, vereq, i, rollar, ad):
             return None if x is None or (isinstance(x, float) and pd.isna(x)) else x
         if "medaxil" in rollar:
             mebleg = _reqem(al("medaxil"))
+            if (mebleg is None or pd.isna(mebleg) or mebleg <= 0) and "mexaric" in rollar:
+                mx = _reqem(al("mexaric"))
+                mebleg = -abs(mx) if mx is not None and not pd.isna(mx) and mx != 0 else mebleg
         else:
             mebleg = _reqem(al("mebleg"))
-        if mebleg is None or pd.isna(mebleg) or mebleg <= 0:
-            continue  # məxaric və ya boş/cəm sətri
+        if mebleg is None or pd.isna(mebleg) or mebleg == 0:
+            continue  # boş/cəm sətri
         teyinat = str(al("teyinat") or "").strip()
         if re.match(r"^(cemi|yekun|итого|total|qaliq|остаток)", norm(teyinat)) and not al("odeyici"):
             continue
@@ -295,16 +299,17 @@ def _oxu_vereq(fayl, vereq, i, rollar, ad):
             voen = voen or (re.sub(r"\D", "", p[2]) if len(p) > 2 else "")
         ty = _teyinatdan(teyinat, odeyici)
         vasiteci = bool(BANK_ADI.search(odeyici))
-        setirler.append({
+        (setirler if mebleg > 0 else mexaricler).append({  # məxaric (mənfi) ayrıca: istəsə inteqrasiyaya salınır
             "setir": k + 1, "tarix_xam": al("tarix"), "tarix": _tarix(al("tarix")),
             "valyuta_tarixi": _tarix(al("valyuta_tarixi")), "mebleg": round(float(mebleg), 2),
             # ödəyici yerində bank yazılıbsa (vasitəçi), əsl ödəyici təyinatdan götürülür
             "odeyici": ty["odeyici"] or odeyici, "voen": ty["voen"] or ("" if vasiteci else voen), "fin": ty["fin"],
             "eks_ad": odeyici, "hesab": hesab, "teyinat": ty["qisa"], "teyinat_xam": teyinat,
             "odeyici_hesab": ty["hesab"], "t_fin_voen": ty["fin"] or ty["voen"],  # təyinatdan: 1C inteqrasiyası üçün
+            **({} if mebleg > 0 else {"kateqoriya": "mexaric", "muqavile": "", "etibar": "", "sebeb": "məxaric"}),
         })
     b = {"ad": ad or pathlib.Path(fayl).name, "vereq": vereq, "basliq_setri": i + 1, "meta": meta,
-         "sutunlar": {rol: basliqlar[j] for rol, j in rollar.items()}, "setirler": setirler}
+         "sutunlar": {rol: basliqlar[j] for rol, j in rollar.items()}, "setirler": setirler, "mexaricler": mexaricler}
     return b
 
 
@@ -424,6 +429,8 @@ def _kod_tap(soz):
         return None
     if re.search(r"yoxlan|taninma|bilinme|namelum|tanimadig", n):
         return "yoxlanmali"
+    if re.search(r"^mexaric|cixan odenis", n):
+        return "mexaric"
     for k in KATEQORIYALAR:
         if n == k["kod"] or norm(k["ad"]).startswith(n[:6]) or any(re.search(a, n) for a in k["acar"]):
             return k["kod"]
@@ -546,7 +553,8 @@ def bank_kec(s, setir=None):
 def bank_madde(s, kateqoriya, madde):
     """Kateqoriyanın pul vəsaitinin maddəsini 1C-dəki adla eyniləşdirir."""
     kod = _kod_tap(kateqoriya)
-    if not kod or kod == "yoxlanmali":
+    gozlenen = ((getattr(s, "bank", None) or {}).get("madde_gozle") or {}).get("kod")
+    if not kod or (kod in ("yoxlanmali", "mexaric") and kod != gozlenen):
         return {"metn": f"«{kateqoriya}» kateqoriyası tanınmadı.", "ui": None}
     madde = madde.strip().strip("«»\"'").strip()
     if not madde:
@@ -581,8 +589,8 @@ def bank_madde_hamisi(s, madde):
         return {"metn": "Hansı ad? Məs.: «Hamısına F-011».", "ui": None}
     secim, bos = b.setdefault("madde_secim", {}), b.get("madde_bos", [])
     q = _qaydalar()
-    kodlar = [k["kod"] for k in KATEQORIYALAR if k["kod"] not in secim and k["kod"] not in bos
-              and any(r["kateqoriya"] == k["kod"] for r in b["setirler"])]
+    hamisi = _inteqrasiya_kodlari(b, b.get("ehate") or "daxilolma", g.get("muqavilesiz", False) or b.get("ehate") != "sigorta")
+    kodlar = [k for k in hamisi if k not in secim and k not in bos]
     for kod in kodlar:
         secim[kod] = madde
         q["madde"][kod] = madde
@@ -629,7 +637,7 @@ def _teklifler(kod, n=4):
     """Maddə üçün təkliflər: əvvəl mühasibin əvvəlki seçimləri (sonuncu birinci), sonra standart adlar."""
     q = _qaydalar()
     out = []
-    for x in q["madde_tarixce"].get(kod, []) + [q["madde"].get(kod), _kat(kod)["teklif"]] + ELAVE_TEKLIF.get(kod, []):
+    for x in [_kat(kod)["teklif"]] + ELAVE_TEKLIF.get(kod, []):  # əvvəlki seçim təklif edilmir: mühasib hər dəfə özü deyir
         if x and x not in out:
             out.append(x)
     return out[:n]
@@ -644,18 +652,15 @@ def _madde_suali(b, kod, muqavilesiz, say):
     else:
         harada = (f"**«{k['ad']}»** daxilolmaları ({say} sətir) üçün **«Pul vəsaitinin maddəsi»** nə olsun? "
                   "Ad bu kateqoriyanın bütün sətirlərinə yazılacaq.")
-    tarixce = _qaydalar()["madde_tarixce"].get(kod, [])
-    variantlar = [{"etiket": f"«{x}»" + (" (son dəfə)" if tarixce and x == tarixce[0] else ""),
-                   "mesaj": f"{k['ad']} maddəsi \"{x}\" olsun", **({"esas": True} if i == 0 else {})}
-                  for i, x in enumerate(_teklifler(kod))]
+    variantlar = [{"etiket": f"«{x}»", "mesaj": f"{k['ad']} maddəsi \"{x}\" olsun"} for x in _teklifler(kod)]
     son = list((b.get("madde_secim") or {}).values())[-1:] or [None]
     if son[0]:  # əvvəlki sualda seçilən ad: qalan kateqoriyaların hamısına bir düymə ilə
         variantlar.append({"etiket": f"Bütün qalanlara «{son[0]}»", "mesaj": f"Hamısına {son[0]}"})
     if kod != "sigorta_haqqi":
-        variantlar.append({"etiket": "Bu dəfə boş qalsın", "mesaj": f"{k['ad']} maddəsi boş qalsın", "ikinci": True})
+        variantlar.append({"etiket": "İnteqrasiyaya salma", "mesaj": f"{k['ad']} maddəsi boş qalsın", "ikinci": True})
     variantlar.append({"etiket": "Ləğv et", "mesaj": "Maddəni sonra deyərəm", "ikinci": True})
-    return {"metn": harada + " Təkliflərdən birini seçin və ya 1C-dəki adı özünüz yazın — ad 1C-dəki maddə ilə "
-                    "hərfi-hərfinə eyni olmalıdır, yoxsa 1C sətri tanımayacaq. Hamısına eyni ad üçün: «Hamısına <ad>».",
+    return {"metn": harada + " 1C-dəki maddənin adını yazın (və ya təklifi seçin) — ad 1C-dəki ilə hərfi-hərfinə eyni "
+                    "olmalıdır, yoxsa 1C sətri tanımayacaq. Hamısına eyni ad üçün: «Hamısına <ad>».",
             "ui": {"tip": "sual", "variantlar": variantlar}}
 
 
@@ -705,26 +710,65 @@ def _sablonu_doldur(sablon, setirler, qovluq, vaxt):
     return ad, son - bas
 
 
-def bank_hesabat(s, muqavilesiz=False):
-    """1C üçün Excel: sığorta haqları (yükləmə faylı), əl ilə işlənənlər, yoxlanmalılar, xəbərdarlıqlar."""
+EHATE = {"sigorta": "yalnız sığorta haqları", "daxilolma": "bütün daxilolmalar", "hamisi": "bütün sətirlər (məxaric də)"}
+
+
+def _ehate_suali(b, muqavilesiz):
+    """Hər doldurmada mühasibdən soruşulur: inteqrasiya faylına hansı sətirlər düşsün."""
+    b["ehate_gozle"] = {"muqavilesiz": muqavilesiz}
+    ss, mx = b["setirler"], b.get("mexaricler", [])
+    sig = sum(1 for r in ss if r["kateqoriya"] == "sigorta_haqqi")
+    sayi = Counter(_kat(r["kateqoriya"])["ad"] for r in ss)
+    tərkib = ", ".join(f"{a} {n}" for a, n in sayi.most_common())
+    var = [{"etiket": f"Yalnız sığorta haqları ({sig})", "mesaj": "İnteqrasiyaya yalnız sığorta haqları"},
+           {"etiket": f"Bütün daxilolmalar ({len(ss)})", "mesaj": "İnteqrasiyaya bütün daxilolmalar"}]
+    if mx:
+        var.append({"etiket": f"Bütün sətirlər — məxaric də ({len(ss) + len(mx)})", "mesaj": "İnteqrasiyaya bütün sətirlər"})
+    var.append({"etiket": "Ləğv et", "mesaj": "Maddəni sonra deyərəm", "ikinci": True})
+    return {"metn": f"Çıxarışda {len(ss) + len(mx)} sətir var: {len(ss)} daxilolma ({tərkib})" +
+                    (f" və {len(mx)} məxaric" if mx else "") + ". **İnteqrasiya faylına hansı sətirlər düşsün?** "
+                    "Hər kateqoriyanın «Pul vəsaitinin maddəsi»ni ayrıca soruşacağam.",
+            "ui": {"tip": "sual", "variantlar": var}}
+
+
+def _inteqrasiya_kodlari(b, ehate, muqavilesiz):
+    """Bu doldurmada inteqrasiyaya düşən kateqoriyalar (maddəsi soruşulacaq) və sətir sayları."""
+    ss = b["setirler"]
+    say = Counter(r["kateqoriya"] for r in ss)
+    if ehate == "sigorta":
+        n = sum(1 for r in ss if r["kateqoriya"] == "sigorta_haqqi" and (r["muqavile"] or muqavilesiz))
+        return {"sigorta_haqqi": n} if n else {}
+    out = {k["kod"]: say[k["kod"]] for k in KATEQORIYALAR if say[k["kod"]]}
+    if say["yoxlanmali"]:
+        out["yoxlanmali"] = say["yoxlanmali"]
+    if ehate == "hamisi" and b.get("mexaricler"):
+        out["mexaric"] = len(b["mexaricler"])
+    return out
+
+
+def bank_hesabat(s, muqavilesiz=False, ehate=None):
+    """1C üçün Excel: inteqrasiya faylı (mühasibin seçdiyi sətirlər, hər kateqoriya öz maddəsi ilə) və yoxlama faylı."""
     b = getattr(s, "bank", None)
     if not b:
         return _yoxdur()
-    # 1C-dəki maddə adını sistem uydurmur. Sığorta haqları (inteqrasiya faylı) üçün HƏR doldurmada soruşur;
-    # digər kateqoriyalar üçün maddə deyilməyibsə bir dəfə soruşur və yadda saxlayır.
-    bilinen, bos, secim = _qaydalar()["madde"], b.get("madde_bos", []), b.get("madde_secim", {})
-    for k in KATEQORIYALAR:
-        say = sum(1 for r in b["setirler"] if r["kateqoriya"] == k["kod"])
-        if not say or k["kod"] in bos or k["kod"] in secim:
-            continue
-        if k["kod"] == "sigorta_haqqi" or k["kod"] not in bilinen:
-            if k["kod"] == "sigorta_haqqi":
-                say = sum(1 for r in b["setirler"] if r["kateqoriya"] == "sigorta_haqqi" and (r["muqavile"] or muqavilesiz))
-                if not say:
-                    continue
-            return _madde_suali(b, k["kod"], muqavilesiz, say)
+    # 1) hansı sətirlər — hər doldurmada mühasibdən soruşulur
+    if ehate in EHATE:
+        b["ehate"] = ehate
+        b.pop("ehate_gozle", None)
+    if b.get("ehate") is None:
+        return _ehate_suali(b, muqavilesiz)
+    ehate = b["ehate"]
+    muqavilesiz = muqavilesiz or ehate != "sigorta"  # bütün daxilolmalar: müqaviləsiz sığorta haqları da
+    # 2) maddə — 1C-dəki adı sistem uydurmur və yaddaşdan götürmür: hər kateqoriya üçün hər doldurmada soruşur
+    bos, secim = b.get("madde_bos", []), b.get("madde_secim", {})
+    kodlar = _inteqrasiya_kodlari(b, ehate, muqavilesiz)
+    for kod, say in kodlar.items():
+        if kod not in bos and kod not in secim:
+            return _madde_suali(b, kod, muqavilesiz, say)
     b.pop("madde_gozle", None)
-    b.pop("madde_secim", None)  # seçim yalnız bu fayl üçündür: növbəti doldurmada yenə soruşulur
+    b.pop("madde_secim", None)  # seçimlər yalnız bu fayl üçündür: növbəti doldurmada yenə soruşulur
+    b.pop("ehate", None)
+    b.pop("madde_bos", None)
 
     def md(kod):  # bu faylda mühasibin indi seçdiyi ad, yoxsa yadda saxlanan
         return secim.get(kod) or _qaydalar()["madde"].get(kod, "")
@@ -759,9 +803,11 @@ def bank_hesabat(s, muqavilesiz=False):
 
     hesab_no = (b.get("meta") or {}).get("hesab", "")  # Aqrar Sığorta Fondunun pul daxil olan hesabı (çıxarışın başlığından)
 
-    def inteqrasiya(r):  # 1C inteqrasiya faylına müqavilə nömrəsi (HS-/BS-) olan sığorta haqları düşür;
-        # mühasib istəsə (muqavilesiz=True), müqaviləsizlər də — nömrə sütunu boş qalır
-        return r["kateqoriya"] == "sigorta_haqqi" and (r["muqavile"] or muqavilesiz) and r["setir"] not in tekrar
+    def inteqrasiya(r):  # mühasibin seçdiyi sətirlər; maddəsi boş saxlanan kateqoriya və təkrar ola biləcəklər düşmür
+        if r["setir"] in tekrar or r["kateqoriya"] not in kodlar or r["kateqoriya"] in bos:
+            return False
+        return r["kateqoriya"] != "sigorta_haqqi" or bool(r["muqavile"] or muqavilesiz)
+    butun = b["setirler"] + (b.get("mexaricler", []) if ehate == "hamisi" else [])
 
     def setir_1c(r):  # FİN/VÖEN və ödəyicinin hesabı təyinatdan götürülür
         d = {"TARİX": r["tarix"], "Sığortalı Fin/Voen": r.get("t_fin_voen") or r.get("fin") or r["voen"],
@@ -775,7 +821,7 @@ def bank_hesabat(s, muqavilesiz=False):
     # yoxlama faylında: 1C sütunları + mühasibin yoxlaması üçün ödəyici və təyinat
     w1 = wb.create_sheet("1C - Sığorta haqları")
     w1.append(SUTUNLAR_1C + ["Çıxarış sətri", "Ödəyici", "Təyinat", "Qeyd"])
-    for r in b["setirler"]:
+    for r in butun:
         if inteqrasiya(r):
             w1.append(setir_1c(r) + [r["setir"], r["odeyici"], r["teyinat"], qeyd(r)])
     for c in w1[1][len(SUTUNLAR_1C):]:
@@ -827,7 +873,7 @@ def bank_hesabat(s, muqavilesiz=False):
     si.title = VEREQ_1C
     si.append(SUTUNLAR_1C)
     sh = 0
-    for r in b["setirler"]:
+    for r in butun:
         if inteqrasiya(r):
             si.append(setir_1c(r))
             sh += 1
@@ -840,12 +886,12 @@ def bank_hesabat(s, muqavilesiz=False):
     sablon = getattr(s, "sablon", None)
     evvelki = 0
     if sablon:  # mühasibin yüklədiyi öz şablonu doldurulur (sütun sırası və formatı onun faylındakı kimi qalır)
-        ad_1c, evvelki = _sablonu_doldur(sablon, [setir_1c(r) for r in b["setirler"] if inteqrasiya(r)], qovluq, vaxt)
+        ad_1c, evvelki = _sablonu_doldur(sablon, [setir_1c(r) for r in butun if inteqrasiya(r)], qovluq, vaxt)
     else:
         wi.save(qovluq / ad_1c)
 
     yox = sum(1 for r in b["setirler"] if r["kateqoriya"] == "yoxlanmali" or r["setir"] in tekrar)
-    natamam = sum(1 for r in b["setirler"] if inteqrasiya(r) and qeyd(r))
+    natamam = sum(1 for r in butun if inteqrasiya(r) and qeyd(r))
     musz = sum(1 for r in b["setirler"] if r["kateqoriya"] == "sigorta_haqqi" and r["setir"] not in tekrar and not r["muqavile"])
     # mesaj: əvvəl nə hazırlandı, sonra nəyə baxmaq lazımdır
     if sablon:
@@ -853,12 +899,17 @@ def bank_hesabat(s, muqavilesiz=False):
               (f" (əvvəlki {evvelki} sətir saxlanıb, yenilər altına yazılıb)" if evvelki else "") + "."
     else:
         bas = f"«Sığorta haqqı inteqrasiya faylı» hazırdır: {sh} sətir, şablonla eyni sütunlar."
-    if muqavilesiz and musz:
+    if ehate != "sigorta":
+        bas += f" İnteqrasiyaya: {EHATE[ehate]}."
+        if bos:
+            bas += " Maddəsi verilməyən kateqoriyalar inteqrasiyaya salınmadı: " + ", ".join(_kat(k)["ad"] for k in bos if k in kodlar) + "."
+    elif muqavilesiz and musz:
         bas += f" Bunlardan {musz}-i müqavilə nömrəsi olmayan sətirdir (nömrə sütunu boş)."
     elif musz:
         bas += (f" Müqavilə nömrəsi (HS-/BS-) olmayan {musz} sığorta haqqı inteqrasiyaya düşmür — yoxlama faylında ayrıca vərəqdədir; "
                 f"onları da salmaq üçün yazın: «Müqaviləsizləri də şablona sal».")
-    bas += f" Hesab nömrəsi: {hesab_no or '— (çıxarışda tapılmadı)'}; maddə: «{md('sigorta_haqqi')}» (bütün sətirlərə yazıldı)."
+    maddeler = "; ".join(f"{_kat(k)['ad']} — «{md(k)}»" for k in kodlar if k not in bos)
+    bas += f" Hesab nömrəsi: {hesab_no or '— (çıxarışda tapılmadı)'}. Maddələr: {maddeler}."
     bas += " Yanında yoxlama faylı da var" + (f" ({yox} sətir «Yoxlanmalı»)" if yox else "") + "."
     return {"metn": bas + (f" {natamam} sətirdə FİN/VÖEN tapılmadı — «Qeyd» sütununa baxın." if natamam else ""),
             "ui": {"tip": "fayllar", "fayllar": [{"ad": ad_1c, "url": "/api/fayl/" + quote(ad_1c)}, {"ad": ad, "url": "/api/fayl/" + quote(ad)}]}}
@@ -874,12 +925,24 @@ def qayda(s, mesaj):
     m = re.search(r"(\d+)\s*-?\s*(?:ci|cu|cı|cü|ci|nci|ncu|inci|uncu)?\s*set(?:ir|ri)|set(?:ir|ri)\s*(\d+)", n)
     if m and re.search(r"\bkec|sonra|atla", n):
         return "bank_kec", {"setir": int(m.group(1) or m.group(2))}
+    # sistem «inteqrasiyaya hansı sətirlər?» soruşub
+    if s.bank.get("ehate_gozle") is not None and not m:
+        eg = s.bank["ehate_gozle"]
+        if re.search(r"sonra deyerem|legv|imtina", n):
+            s.bank.pop("ehate_gozle", None)
+            return "bank_xulase", {}
+        ehate = ("hamisi" if re.search(r"butun setir|mexaric|hamisi\b|71|hamisini", n) else
+                 "daxilolma" if re.search(r"butun daxilolma|daxilolmalar|hamisi daxil", n) else
+                 "sigorta" if re.search(r"sigorta", n) else None)
+        if ehate:
+            return "bank_hesabat", {"ehate": ehate, "muqavilesiz": eg.get("muqavilesiz", False)}
     # sistem «maddə nə olsun?» soruşub: növbəti qısa cavab həmin kateqoriyanın maddəsinin adıdır
     gozle = s.bank.get("madde_gozle")
     if gozle is not None and not m:
         kod = gozle.get("kod", "sigorta_haqqi")
         if re.search(r"sonra deyerem|legv|imtina|bilmirem", n):
-            s.bank.pop("madde_gozle", None)
+            for x in ("madde_gozle", "madde_secim", "ehate", "madde_bos"):
+                s.bank.pop(x, None)
             return "bank_xulase", {}
         if re.search(r"bos qalsin|bos saxla|bos olsun|bos burax", n):
             return "bank_madde_bos", {"kateqoriya": kod}

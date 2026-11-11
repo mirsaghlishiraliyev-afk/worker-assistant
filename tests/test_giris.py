@@ -116,6 +116,8 @@ def test_her_istifadecinin_oz_sessiyasi():
     B._qaydalar_yaz({**B._qaydalar(), "madde": {k["kod"]: k["teklif"] for k in B.KATEQORIYALAR}})   # mühasib maddələri deyib
     r = a.post("/api/sohbet", json={"mesaj": "1C üçün Excel hazırla"}).json()
     assert r["hadiseler"][0]["ui"]["tip"] == "sual"                       # maddə hər doldurmada soruşulur
+    r = a.post("/api/sohbet", json={"mesaj": "İnteqrasiyaya yalnız sığorta haqları"}).json()   # hansı sətirlər — soruşulur
+    assert "Pul vəsaitinin maddəsi" in r["cavab"]
     r = a.post("/api/sohbet", json={"mesaj": "Sığorta haqları maddəsi \"Sığorta haqları\" olsun"}).json()
     url = r["hadiseler"][0]["ui"]["fayllar"][0]["url"]
     assert a.get(url).status_code == 200
