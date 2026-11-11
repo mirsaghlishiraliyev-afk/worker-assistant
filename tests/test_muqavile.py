@@ -119,3 +119,21 @@ def test_hamisina_artiq_odenis():
     n = B.bank_muqavile(k, 14, "hamisi")
     assert k.bank["muq_qerar"]["14"] == [("BS-2026000301-AS", 3000.0), ("BS-2026000302-AS", 3000.0), ("", 1060.0)]
     assert "artıq qalan 1 060,00 müqaviləsiz ayrıca sətirdir" in n["metn"]
+
+
+def test_teyinata_gore_hs_ve_bs():
+    """Təyinatda «heyvan» — yalnız HS- müqavilələr; «bitki»/«ting» — yalnız BS-; heç biri yoxdursa — hamısı."""
+    ms = [{"no": "HS-2026000001-QS", "fin": "1AB2CD3", "ad": "", "aqrar": 50.0, "status": "Aktiv", "uygun": True},
+          {"no": "BS-2026000002-PS", "fin": "1AB2CD3", "ad": "", "aqrar": 50.0, "status": "Aktiv", "uygun": True}]
+    r = {"fin": "1AB2CD3", "mebleg": 50.0, "odeyici": "", "teyinat_xam": ""}
+    nomre = lambda t: [m["no"] for m in B._namizedler(dict(r, teyinat_xam=t), ms, set())]  # noqa: E731
+    assert nomre("Sığorta ödənişi DAMAZLIQ HEYVANLARIN SIGORTA ODENISI") == ["HS-2026000001-QS"]
+    assert nomre("Bitkiçilik sığortası") == ["BS-2026000002-PS"]
+    assert nomre("alma ting sığortası") == ["BS-2026000002-PS"]
+    assert nomre("SIĞORTA") == ["HS-2026000001-QS", "BS-2026000002-PS"]
+    k = K()
+    r9 = next(x for x in k.bank["setirler"] if x["setir"] == 9)
+    r9["teyinat_xam"] = "heyvan sigortasi"                                        # 1AB2CD3-ün müqavilələri BS-dir
+    assert B._namizedler(r9, k.muqavileler["siyahi"], set()) == []
+    n = B.bank_muqavile(k, 9, "BS-2026000101-PS")
+    assert "heyvandarlıq" not in n["metn"] and "bitkiçilik (BS-) müqaviləsidir — yoxlayın" in n["metn"]

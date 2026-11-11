@@ -724,13 +724,22 @@ def _fin(r):
     return re.sub(r"\W", "", str(r.get("t_fin_voen") or r.get("fin") or r.get("voen") or "")).upper()
 
 
+def muqavile_novu(r):
+    """Təyinata görə müqavilənin növü: «heyvan» — heyvandarlıq (HS-), «bitki»/«ting» — bitkiçilik (BS-); bilinmirsə None."""
+    t = norm(r.get("teyinat_xam") or r.get("teyinat") or "")
+    heyvan, bitki = bool(re.search(r"heyvan", t)), bool(re.search(r"bitki|\bting", t))
+    return "HS" if heyvan and not bitki else ("BS" if bitki and not heyvan else None)
+
+
 def _namizedler(r, muqler, tutulan):
-    """Mədaxil üçün namizəd müqavilələr: FİN ilə (yoxdursa — adla); statusu uyğun; başqa sətrə verilməmiş."""
-    f = _fin(r)
-    ms = [m for m in muqler if m["uygun"] and m["no"] not in tutulan and f and m["fin"] == f]
+    """Mədaxil üçün namizəd müqavilələr: FİN ilə (yoxdursa — adla); statusu uyğun; başqa sətrə verilməmiş;
+    təyinatda «heyvan» varsa yalnız HS-, «bitki»/«ting» varsa yalnız BS- müqavilələr."""
+    f, nov = _fin(r), muqavile_novu(r)
+    hazir = [m for m in muqler if m["uygun"] and m["no"] not in tutulan and (not nov or m["no"].startswith(nov + "-"))]
+    ms = [m for m in hazir if f and m["fin"] == f]
     if not ms and r.get("odeyici"):
         ad = norm(r["odeyici"]).strip()
-        ms = [m for m in muqler if m["uygun"] and m["no"] not in tutulan and m["ad"] and norm(m["ad"]).strip() == ad]
+        ms = [m for m in hazir if m["ad"] and norm(m["ad"]).strip() == ad]
     return ms
 
 
@@ -769,7 +778,9 @@ def _muq_suali(b, r, ms, novbe, cem):
     sira = "\n".join(f"- {m['no']} — Aqrar sığorta haqqı {_f(m['aqrar'])} ({m['status'] or 'status yoxdur'})" for m in ms[:8]) + \
         (f"\n- … daha {len(ms) - 8} müqavilə" if len(ms) > 8 else "")
     metn = (f"Müqavilə {novbe}/{cem}: {r['setir']}-ci sətir — {tarix}, **{_f(r['mebleg'])} AZN**, {r['odeyici'] or 'ödəyici yoxdur'}"
-            f" (FİN/VÖEN: {_fin(r) or '—'}). Bu FİN-ə {len(ms)} müqavilə var. Nəticə: **{netice}**.\n{sira}\n"
+            f" (FİN/VÖEN: {_fin(r) or '—'}). Bu FİN-ə {len(ms)} müqavilə var"
+            + {"HS": " (təyinatda «heyvan»: yalnız HS- müqavilələr)", "BS": " (təyinatda «bitki/ting»: yalnız BS- müqavilələr)", None: ""}[muqavile_novu(r)]
+            + f". Nəticə: **{netice}**.\n{sira}\n"
             "Hansı müqaviləyə aiddir? Düyməni seçin və ya nömrəni yazın.")
     isare = {"deqiq": "✓", "kombo": "✓", "yaxin": "≈", "uzaq": "≠"}
     var = []
@@ -835,6 +846,11 @@ def bank_muqavile(s, setir, muqavile=""):
             elif cem - r["mebleg"] > MUQ_DOZUM:
                 qeyd = (f" Diqqət: müqavilələrin cəmi {_f(cem)}, mədaxil isə {_f(r['mebleg'])} — pul müqavilələrə sıra ilə paylandı"
                         + (f", {len(nomreler) - len(bolgu)} müqaviləyə çatmadı" if len(bolgu) < len(nomreler) else "") + ".")
+        nov = muqavile_novu(r)
+        yad = [n for n in nomreler if nov and not n.startswith(nov + "-")]
+        if yad:
+            qeyd += (f" Diqqət: təyinatda «{'heyvan' if nov == 'HS' else 'bitki/ting'}» var, amma {', '.join(yad)} "
+                     f"{'bitkiçilik (BS-)' if nov == 'HS' else 'heyvandarlıq (HS-)'} müqaviləsidir — yoxlayın.")
         qerar[str(r["setir"])] = bolgu
         metn = (f"Oldu: {r['setir']}-ci sətir — " + ", ".join(f"{n or 'müqaviləsiz'} ({_f(m)})" for n, m in bolgu) +
                 ". İnteqrasiya faylına yazılacaq." + qeyd)
