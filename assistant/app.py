@@ -255,6 +255,7 @@ def veziyyet(request: Request = None):
             "teklifler": getattr(S, "teklifler", []),
             "istifadeci": {"ad": u.get("a") or u["l"], "login": u["l"]} if u else None,
             "profil": PR.al(_CARI.get()), "peseler": PR.PESELER, "heller": PR.heller(PR.al(_CARI.get())),
+            "pese_effektiv": PR.effektiv(PR.al(_CARI.get())),
             "sablon": S.sablon["ad"] if getattr(S, "sablon", None) else None,
             "bank": ({"daxilolma": len(S.bank["setirler"]), "yoxlanmali": sum(r["kateqoriya"] == "yoxlanmali" for r in S.bank["setirler"]),
                       "sual": len(BANK._sual_setirleri(S.bank)),

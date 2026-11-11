@@ -505,7 +505,29 @@ def test_peseye_gore_telimat():
     c = TestClient(app)
     _gir(c, "aynur", "Parol1")
     r = c.put("/api/profil", json={"peseler": ["dis_hekimi", "klinika_rehber"]}).json()
-    assert [p["ad"] for p in r["telimat"]["peseler"]] == ["Diş həkimi", "Diş klinikasının rəhbəri"]
+    assert [p["ad"] for p in r["telimat"]["peseler"]] == ["Diş həkimi", "Həkim", "Diş klinikasının rəhbəri"]   # həkim də daxildir
     r = c.post("/api/sohbet", json={"mesaj": "Təlimat"}).json()                       # fayl yüklənməyib, yenə də açılır
     ui = r["hadiseler"][0]["ui"]
     assert ui["tip"] == "telimat" and ui["peseler"][0]["addimlar"][0]["s"] == "Stoka tələb yaz"
+
+
+def test_dis_hekimi_hekimin_altindadir():
+    """Diş həkimi «Həkim»in alt peşəsidir: seçiləndə həkimin həlləri, modulları və təlimatı da əlavə olunur."""
+    from assistant import profil as PR
+    assert next(p for p in PR.PESELER if p["kod"] == "dis_hekimi")["ust"] == "hekim"
+    prf = {"peseler": ["dis_hekimi"]}
+    assert PR.effektiv(prf) == ["dis_hekimi", "hekim"]
+    hl = PR.heller(prf)
+    assert {"Diş həkimi", "Həkim"} == {h["pese"] for h in hl}
+    assert "Sütunları göstər" in [h["s"] for h in hl]                                  # həkimin həlli
+    assert hl[0]["pese"] == "Diş həkimi"                                              # öz həlləri əvvəl
+    assert len({h["s"] for h in hl}) == len(hl)                                       # təkrarsız
+    assert [p["ad"] for p in PR.telimat(prf)["peseler"]] == ["Diş həkimi", "Həkim"]
+    assert PR.effektiv({"peseler": ["hekim"]}) == ["hekim"]                           # tərsinə deyil
+    assert PR.effektiv({"peseler": ["hekim", "dis_hekimi"]}) == ["hekim", "dis_hekimi"]
+    _qur()
+    c = TestClient(app)
+    _gir(c, "aynur", "Parol1")
+    assert c.put("/api/profil", json={"peseler": ["dis_hekimi"]}).json()["profil"] == {"peseler": ["dis_hekimi"]}
+    v = c.get("/api/veziyyet").json()
+    assert v["pese_effektiv"] == ["dis_hekimi", "hekim"] and any(h["pese"] == "Həkim" for h in v["heller"])

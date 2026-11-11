@@ -46,7 +46,8 @@ PESELER = [
          {"s": "Fayl haqqında ümumi məlumat ver", "b": "Xəstə qeydiyyatının strukturu", "a": "vərəqlər, sütunlar, qeyd sayı"},
          {"s": "Sütunları göstər", "b": "Göstəricilər üzrə statistika", "a": "ən çox rast gələn dəyərlər, min / maks / orta"},
          {"s": "Fayldakı problemləri tap", "b": "Qeydiyyatda səhvlər", "a": "təkrar qeydlər, boş xanalar, şübhəli tarixlər"}]},
-    {"kod": "dis_hekimi", "ad": "Diş həkimi", "tesvir": "qəbullar, WhatsApp xatırlatmaları, stoka tələb", "modullar": ["qebul", "teleb", "excel"],
+    # «ust»: alt peşə — üst peşənin bütün imkanları da ona aiddir (diş həkimi həm də həkimdir)
+    {"kod": "dis_hekimi", "ust": "hekim", "ad": "Diş həkimi", "tesvir": "qəbullar, WhatsApp xatırlatmaları, stoka tələb", "modullar": ["qebul", "teleb", "excel"],
      "heller": [
          {"s": "Stoka tələb yaz", "b": "Stoka tələb", "a": "nə lazımdır — rəhbər təsdiq edir"},
          {"s": "Təsdiq mesajlarını hazırla", "b": "Qəbula yazılma mesajı", "a": "pasiyentə WhatsApp: tarix, həkim, problem"},
@@ -109,10 +110,20 @@ def saxla(login, peseler):
     return {"peseler": peseler}
 
 
-def modullar(profil):
-    """Profilə uyğun modul kodları (seçim sırası ilə)."""
+def effektiv(profil):
+    """Seçilmiş peşələr + onların üst peşələri (alt peşə əvvəl: «Diş həkimi», sonra «Həkim»)."""
     out = []
     for k in (profil or {}).get("peseler", []):
+        while k and k not in out:
+            out.append(k)
+            k = next(p for p in PESELER if p["kod"] == k).get("ust")
+    return out
+
+
+def modullar(profil):
+    """Profilə uyğun modul kodları (seçim sırası ilə, üst peşələr daxil)."""
+    out = []
+    for k in effektiv(profil):
         for m in next(p for p in PESELER if p["kod"] == k)["modullar"]:
             if m not in out:
                 out.append(m)
@@ -122,7 +133,7 @@ def modullar(profil):
 def heller(profil):
     """İstifadəçiyə peşəsinə görə hazır həllər (bir neçə peşə: hər birindən, təkrarsız)."""
     out, gorulen = [], set()
-    for k in (profil or {}).get("peseler", []):
+    for k in effektiv(profil):
         p = next(x for x in PESELER if x["kod"] == k)
         for h in p["heller"]:
             if h["s"] not in gorulen:
@@ -210,7 +221,7 @@ TELIMATLAR = {
 
 def telimat(profil):
     """Seçilmiş peşələr üçün təlimat (interfeysdə «telimat» bloku kimi göstərilir)."""
-    kodlar = (profil or {}).get("peseler", [])
+    kodlar = effektiv(profil)
     if not kodlar:
         return None
     peseler = [{"ad": next(p["ad"] for p in PESELER if p["kod"] == k), **TELIMATLAR[k]} for k in kodlar if k in TELIMATLAR]

@@ -269,6 +269,10 @@ a.wa-link{background:linear-gradient(180deg,#25d366,#128c4a);border-color:#25d36
 #pesePenc .ps{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
 #pesePenc label.pe{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:2px;cursor:pointer}
 #pesePenc label.pe:has(input:checked){border-color:var(--red);background:rgba(255,42,42,.08)}
+#pesePenc label.alt-pe{margin-left:22px;border-left:2px solid var(--line-2)}
+#pesePenc .dax{display:block;color:var(--amber)!important;font-size:12px!important;margin-top:2px}
+#pesePenc .dax[hidden]{display:none}
+#pesePenc label.pe input:disabled+div b{color:var(--muted)}
 #pesePenc label.pe input{margin-top:3px;accent-color:var(--red)}
 #pesePenc label.pe b{display:block;color:var(--ink);font-weight:600}
 #pesePenc label.pe span{color:var(--muted);font-size:12.5px}
@@ -454,7 +458,7 @@ function sideAlt(r){
   $("#faylBas").textContent = ad + (r.uzlasma ? " · " + r.dovr_sonu.split("-").reverse().join(".") : "");
 }
 // Server versiyası: kod yenilənib, server köhnə qalıbsa, bu yazı köhnə versiyanı göstərir
-const UI_VERSIYA = "1.10.1";
+const UI_VERSIYA = "1.11.0";
 function versiyaCiz(r){
   let el = $("#versiya");
   if(!el){ el = document.createElement("div"); el.id = "versiya"; el.style.cssText = "font:10.5px var(--mono);color:var(--dim);padding:6px 8px 0"; $("#yan").appendChild(el); }
@@ -476,11 +480,11 @@ function versiyaCiz(r){
     (kohne ? `<div style="color:var(--amber)">Server köhnə versiyadadır. Ctrl+C, sonra python -m assistant.</div>` : "");
 }
 // İstifadəçinin peşələrinə uyğun modullar öndə; boş ekrandakı nümunə sorğular da onlardan
-let pesePrf = null, peseSiyahisi = [], peseHelleri = [];
+let pesePrf = null, peseSiyahisi = [], peseHelleri = [], peseEffektiv = [];
 function peseAdlari(){ return (pesePrf?.peseler || []).map(k => peseSiyahisi.find(p => p.kod === k)?.ad || k); }
 function peseModullari(){
   const out = [];
-  for(const k of (pesePrf?.peseler || [])) for(const m of (peseSiyahisi.find(p => p.kod === k)?.modullar || [])) if(!out.includes(m)) out.push(m);
+  for(const k of (peseEffektiv.length ? peseEffektiv : pesePrf?.peseler || [])) for(const m of (peseSiyahisi.find(p => p.kod === k)?.modullar || [])) if(!out.includes(m)) out.push(m);
   return out;
 }
 document.addEventListener("click", e => { if(e.target.id === "peseDeyis"){ e.preventDefault(); peseAc(true); } });
@@ -521,7 +525,7 @@ async function veziyyet(){
   const el = $("#rejim"), kod = r.rejim_kod || "qayda";
   el.className = "rejim " + kod; el.dataset.tip = r.rejim; el.setAttribute("aria-label", r.rejim);
   el.innerHTML = REJIM_IKON[kod] || REJIM_IKON.qayda;
-  pesePrf = r.profil || null; peseSiyahisi = r.peseler || []; peseHelleri = r.heller || [];
+  pesePrf = r.profil || null; peseSiyahisi = r.peseler || []; peseHelleri = r.heller || []; peseEffektiv = r.pese_effektiv || [];
   sideAlt(r); modullarCiz(r.modullar); versiyaCiz(r); peseBasliq();
   if(!r.profil && !window.peseSoruldu){ window.peseSoruldu = true; peseAc(false); }  // peşə seçilməyib: soruş
   return r;
@@ -529,8 +533,11 @@ async function veziyyet(){
 // ---------- peşə seçimi ----------
 function peseAc(legvOlar){
   const sec = new Set(pesePrf?.peseler || []);
-  $("#peseSiyahi").innerHTML = peseSiyahisi.map(p => `<label class="pe"><input type="checkbox" value="${esc(p.kod)}" ${sec.has(p.kod) ? "checked" : ""}>
-    <div><b>${esc(p.ad)}</b><span>${esc(p.tesvir)}</span></div></label>`).join("");
+  // alt peşə (məs. Diş həkimi) üst peşənin (Həkim) altında, içəridən göstərilir
+  const sira = peseSiyahisi.filter(p => !p.ust).flatMap(p => [p, ...peseSiyahisi.filter(a => a.ust === p.kod)]);
+  $("#peseSiyahi").innerHTML = sira.map(p => `<label class="pe ${p.ust ? "alt-pe" : ""}" data-kod="${esc(p.kod)}"><input type="checkbox" value="${esc(p.kod)}" data-ust="${esc(p.ust || "")}" ${sec.has(p.kod) ? "checked" : ""}>
+    <div><b>${p.ust ? "↳ " : ""}${esc(p.ad)}</b><span>${esc(p.tesvir)}</span><span class="dax" hidden>${esc(p.ad)} imkanları da daxildir</span></div></label>`).join("");
+  peseUstYenile();
   $("#peseXeta").textContent = "";
   $("#peseLegv").hidden = !legvOlar;
   $("#pesePenc").hidden = false;
@@ -543,10 +550,24 @@ function peseBasliq(){
   const kohne = BASLIQ; BASLIQ = yeni;
   if($("#bos h1")?.textContent === kohne) basliq(BASLIQ);
 }
+// alt peşə seçiləndə üst peşə avtomatik daxil olur (işarələnir və dəyişdirilmir)
+function peseUstYenile(){
+  const qutular = [...document.querySelectorAll("#peseSiyahi input")];
+  for(const q of qutular){
+    const altSecili = qutular.some(a => a.dataset.ust === q.value && a.checked);
+    if(altSecili){ q.checked = true; q.disabled = true; } else if(q.disabled){ q.disabled = false; q.checked = !!pesePrf?.peseler?.includes(q.value); }
+    const dax = q.closest("label").querySelector(".dax");
+    if(dax){
+      const altlar = qutular.filter(a => a.dataset.ust === q.value && a.checked).map(a => peseSiyahisi.find(p => p.kod === a.value)?.ad);
+      dax.hidden = !altSecili; dax.textContent = altSecili ? `${altlar.join(", ")} seçildiyi üçün daxildir` : "";
+    }
+  }
+}
+document.addEventListener("change", e => { if(e.target.closest("#peseSiyahi")) peseUstYenile(); });
 $("#peseLegv").onclick = () => { $("#pesePenc").hidden = true; };
 $("#peseForm").onsubmit = async e => {
   e.preventDefault();
-  const peseler = [...document.querySelectorAll("#peseSiyahi input:checked")].map(x => x.value);
+  const peseler = [...document.querySelectorAll("#peseSiyahi input:checked:not(:disabled)")].map(x => x.value);  // üst peşə serverdə əlavə olunur
   if(!peseler.length){ $("#peseXeta").textContent = "Siyahıdan ən azı bir peşə seçin."; return; }
   const r = await fetch("/api/profil", {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({peseler})});
   const j = await r.json().catch(() => ({}));
