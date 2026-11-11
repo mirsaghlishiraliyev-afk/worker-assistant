@@ -52,6 +52,14 @@ Salam, {{1}}! Diş klinikası üçün sifariş vermək istəyirik: {{2}}. Xahiş
 
 Parametrlər: {{1}} təchizatçının adı, {{2}} məhsullar siyahısı (nöqtəli vergüllə)
 
+### `stok_teleb` — Rəhbərə stok tələbi
+
+```
+Salam! {{1}} stoka tələb yazıb: {{2}}. Tələbə Worker's Assistant-da baxıb təsdiq və ya rədd edə bilərsiniz.
+```
+
+Parametrlər: {{1}} tələbi yazan həkim(lər), {{2}} tələblər (nömrə, məhsul, miqdar)
+
 Rəhbərin nömrəsi: `WA_REHBER_TEL` və ya çatda «Rəhbərin telefonu 050 123 45 67». Təchizatçıların nömrələri stok faylının «Təchizatçının telefonu» sütunundan götürülür.
 
 ## Qoşulma

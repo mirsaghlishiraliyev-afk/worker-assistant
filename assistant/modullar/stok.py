@@ -22,6 +22,7 @@ import re
 import pandas as pd
 
 from . import qebul as QB
+from . import teleb as TELEB
 from .excel import _sorgu, norm
 
 SABLONLAR = {
@@ -170,10 +171,10 @@ def stok_veziyyeti(s, yalniz_azalan=False):
     return {"metn": metn, "ui": ui}
 
 
-def _kart(sablon, ad, tel, param, gonder, acar):
-    s = SABLONLAR[sablon]
+def _kart(sablon, ad, tel, param, gonder, acar, sablonlar=None):
+    s = (sablonlar or SABLONLAR)[sablon]
     metn = re.sub(r"\{\{(\d+)\}\}", lambda m: param[int(m.group(1)) - 1], s["metn"])
-    k = {"kime": s["kime"], "ad": ad, "tel": QB.tel_goster(tel), "metn": metn, "sablon": s["ad"]}
+    k = {"kime": s["kime"], "ad": ad, "tel": QB.tel_goster(tel), "metn": metn, "sablon": s["ad"], "_acar": acar}
     evvel = QB._gonderilenler()
     if not tel:
         k["status"] = "telefon yoxdur"
@@ -231,17 +232,43 @@ def stok_sifaris(s, gonder=False, techizatci=None):
     d = stok(s)
     if not d:
         return _yoxdur(s)
-    az = [m for m in _azalanlar(d) if not techizatci or norm(techizatci) in norm(m["techizatci"])]
-    if not az:
-        return {"metn": "Sifariş lazım deyil: stokda azalan məhsul yoxdur.", "ui": None}
+    az = [dict(m, telebler=[]) for m in _azalanlar(d)]
+    # həkimlərin təsdiqlənmiş tələbləri: stokdakı məhsulla tutuşdurulur (təchizatçı ondan), miqdar böyüyü götürülür
+    uygunsuz = []
+    for t in TELEB.tesdiqlenmis():
+        tn = norm(t["mehsul"]).strip()
+        m = next((x for x in az if tn and (tn in norm(x["mehsul"]) or norm(x["mehsul"]) in tn)), None)
+        if m is None:
+            st = next((x for x in d["mehsullar"] if tn and (tn in norm(x["mehsul"]) or norm(x["mehsul"]) in tn)), None)
+            if st:
+                m = dict(st, sifaris=0, telebler=[])
+                az.append(m)
+        if m is None:
+            uygunsuz.append(t)
+            continue
+        m["sifaris"] = max(m["sifaris"] or 0, t["miqdar"] or 0) or m["sifaris"]
+        m["telebler"].append(t["no"])
+    az = [m for m in az if not techizatci or norm(techizatci) in norm(m["techizatci"])]
+    if not az and not uygunsuz:
+        return {"metn": "Sifariş lazım deyil: stokda azalan məhsul və təsdiqlənmiş tələb yoxdur.", "ui": None}
     qruplar = {}
     for m in az:
         qruplar.setdefault((m["techizatci"] or "Təchizatçı göstərilməyib", m["tel"]), []).append(m)
-    kartlar = []
+    for t in uygunsuz:  # stokda olmayan yeni məhsul: təchizatçısı bilinmir
+        qruplar.setdefault(("Təchizatçı göstərilməyib", ""), []).append(
+            {"mehsul": t["mehsul"], "sifaris": t["miqdar"], "vahid": t["vahid"], "telebler": [t["no"]]})
+    kartlar, kart_telebleri = [], []
     for (ad, tel), ms in qruplar.items():
-        siyahi = "; ".join(f"{m['mehsul']} — {_goster(m['sifaris'])}{_vahid(m)}" for m in ms)
+        siyahi = "; ".join(f"{m['mehsul']} — {_goster(m['sifaris']) if m['sifaris'] else 'miqdarı dəqiqləşdirin'}{_vahid(m)}" for m in ms)
         kartlar.append(_kart("stok_sifaris", ad, tel, [ad, siyahi], gonder, _acar("stok_sifaris", tel, siyahi)))
+        kart_telebleri.append({no for m in ms for no in m.get("telebler", [])})
+    for k, nolar in zip(kartlar, kart_telebleri):  # göndərilən sifarişin tələbləri «sifariş edildi» olur
+        if k.get("status") == "göndərildi ✓" and nolar:
+            TELEB.status_deyis(nolar, "sifaris")
     n = _netice(kartlar, gonder, f"{len(kartlar)} təchizatçıya sifariş", "Təchizatçılara sifarişi göndər")
+    tno = sorted({no for x in kart_telebleri for no in x})
+    if tno:
+        n["metn"] += f" Həkimlərin təsdiqlənmiş tələbləri də daxildir: {', '.join(tno)}."
     telsiz = [k["ad"] for k in kartlar if not k["tel"]]
     if telsiz:
         n["metn"] += f" Telefonu olmayan: {', '.join(telsiz)} — stok faylında «Təchizatçının telefonu» sütununa yazın."

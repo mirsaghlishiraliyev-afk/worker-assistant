@@ -20,6 +20,7 @@ from . import kitabxana as KB
 from . import teklif as TK
 from .modullar import bank as BANK
 from .modullar import qebul as QB
+from .modullar import teleb as TELEB
 from . import tools as T
 from .state import HESABATLAR, YUKLEMELER, Sessiya
 
@@ -385,6 +386,11 @@ def sohbet(m: Mesaj):
     if sablon:
         S.tarixce += [{"role": "user", "content": m.mesaj}, {"role": "assistant", "content": sablon}]
         return {"cavab": sablon, "hadiseler": []}
+    plan = TELEB.qayda(S, m.mesaj)  # stoka tələb: fayl lazım deyil
+    if plan:
+        netice = T.cagir(S, plan[0], plan[1])
+        S.tarixce += [{"role": "user", "content": m.mesaj}, {"role": "assistant", "content": netice["metn"]}]
+        return {"cavab": netice["metn"], "hadiseler": [{"alet": plan[0], "args": plan[1], "ui": netice.get("ui")}]}
     if not S.fayl_var:
         # sual yadda qalır: fayl yüklənən kimi interfeys onu təkrar soruşmadan cavablandırır
         return {"cavab": "Bu sual üçün fayl lazımdır. 📎 düyməsi ilə Excel faylını əlavə edin — yüklənən kimi sualınızı cavablandıracağam.",

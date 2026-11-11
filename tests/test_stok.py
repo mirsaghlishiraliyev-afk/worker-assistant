@@ -10,6 +10,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from assistant.modullar import excel as EX  # noqa: E402
 from assistant.modullar import qebul as QB  # noqa: E402
 from assistant.modullar import stok as ST  # noqa: E402
+from assistant.modullar import teleb as TELEB  # noqa: E402
 
 FAYL = pathlib.Path(__file__).parent / "data" / "stok_test.xlsx"
 
@@ -23,6 +24,7 @@ class S:
 def muhit(monkeypatch):
     monkeypatch.setattr(QB, "QOVLUQ", pathlib.Path(tempfile.mkdtemp()))
     monkeypatch.setattr(QB, "_indi", lambda: dt.datetime(2026, 11, 11, 9, 0))
+    monkeypatch.setattr(TELEB, "QOVLUQ", pathlib.Path(tempfile.mkdtemp()))
     monkeypatch.setattr(QB, "TOKEN", "")
     monkeypatch.setattr(QB, "PHONE_ID", "")
     monkeypatch.delenv("WA_REHBER_TEL", raising=False)
@@ -107,3 +109,30 @@ def test_sablonlar_senedde():
     doc = (pathlib.Path(__file__).resolve().parents[1] / "deploy" / "whatsapp_sablonlar.md").read_text(encoding="utf-8")
     for ad, s in ST.SABLONLAR.items():
         assert ad in doc and s["metn"] in doc, ad
+
+
+def test_tesdiqlenmis_telebler_sifarise_dusur():
+    s = S()
+    TELEB.stok_teleb_yaz(s, "Tibbi maska", 10, "qutu")                  # stokda var, azalmayıb: həkim istəyir
+    TELEB.stok_teleb_yaz(s, "kompozit plomb", 15, "ədəd")              # azalan məhsul: miqdarın böyüyü
+    TELEB.stok_teleb_yaz(s, "Rentgen plyonkası", 50, "ədəd")           # stokda yoxdur
+    TELEB.stok_teleb_yaz(s, "Endodontik fayl dəsti", 2, "dəst")         # rədd ediləcək
+    TELEB.stok_teleb_qerar(s, "T-004", "rədd")
+    TELEB.stok_teleb_qerar(s, "hamisi", "təsdiq")
+    n = ST.stok_sifaris(s)
+    k = {x["ad"]: x["metn"] for x in n["ui"]["kartlar"]}
+    assert "Tibbi maska — 10 qutu" in k["MedSupply"] and "Endodontik" not in k["MedSupply"]
+    assert "Kompozit plomb materialı (A2) — 15 ədəd" in k["DentalMed MMC"]
+    assert "Rentgen plyonkası — 50 ədəd" in k["Təchizatçı göstərilməyib"]
+    assert "T-001, T-002, T-003" in n["metn"]
+
+
+def test_gonderilen_sifarisin_telebleri_isarelenir(monkeypatch):
+    monkeypatch.setattr(QB, "TOKEN", "t")
+    monkeypatch.setattr(QB, "PHONE_ID", "1")
+    monkeypatch.setattr(QB, "GONDERICI", lambda *a: None)
+    s = S()
+    TELEB.stok_teleb_yaz(s, "Tibbi maska", 10, "qutu")
+    TELEB.stok_teleb_qerar(s, "T-001", "təsdiq")
+    ST.stok_sifaris(s, gonder=True)
+    assert TELEB.hamisi()[0]["status"] == "sifaris"

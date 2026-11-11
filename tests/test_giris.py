@@ -466,3 +466,24 @@ def test_tibb_hellerinin_neticesi():
     m = EX.qrupla(K(), **EX.qayda(K(), "Məbləğ cəmi xidmət üzrə")[1])["metn"]
     assert m.index("Implant") < m.index("Plomb")                                # ən çox gəlir gətirən öndədir
     assert "Təkrar sətirlər" in EX.problemler(K())["metn"]
+
+def test_hekim_teleb_yazir_rehber_tesdiq_edir():
+    """Həkim fayl yükləmədən stoka tələb yazır; rəhbər (peşəsi «Diş klinikasının rəhbəri») görür və təsdiq edir."""
+    _qur()
+    hekim, rehber = TestClient(app), TestClient(app)
+    _gir(hekim, "aynur", "Parol1")
+    _gir(rehber, "resad", "Parol2")
+    hekim.put("/api/profil", json={"peseler": ["dis_hekimi"]})
+    rehber.put("/api/profil", json={"peseler": ["klinika_rehber"]})
+    r = hekim.post("/api/sohbet", json={"mesaj": "Stoka tələb: Kompozit plomb A2 — 5 ədəd, təcili"}).json()
+    assert "qeydə alındı" in r["cavab"] and "fayl lazımdır" not in r["cavab"]
+    no = r["cavab"].split("Tələb ")[1].split(" ")[0]
+    r = hekim.post("/api/sohbet", json={"mesaj": f"{no} təsdiq"}).json()
+    assert "yalnız klinika rəhbəri" in r["cavab"]
+    r = rehber.post("/api/sohbet", json={"mesaj": "Stok tələblərini göstər"}).json()
+    setirler = r["hadiseler"][0]["ui"]["bloklar"][0]["setirler"]
+    assert any(x[0] == no and x[5] == "Aynur Məmmədova" and x[3] == "təcili" for x in setirler)
+    r = rehber.post("/api/sohbet", json={"mesaj": f"{no} təsdiq"}).json()
+    assert r["cavab"].startswith(f"Oldu: {no} — təsdiqləndi")
+    r = hekim.post("/api/sohbet", json={"mesaj": "Stok tələblərini göstər"}).json()
+    assert any(x[0] == no and x[4] == "təsdiqləndi" for x in r["hadiseler"][0]["ui"]["setirler"])   # həkim nəticəni görür
