@@ -671,6 +671,9 @@ MUQ_ROLLAR = {"no": r"sigorta muqavilesinin nomresi|muqavile\w* nomre", "fin": r
               "aqrar": r"aqrar sigorta haqqi", "status": r"^status", "ad": r"sigortali adi", "yekun": r"yekun sigorta haqqi"}
 MUQ_STATUSLAR = ("odenis gozleyir", "aktiv")  # yalnız bu statuslu müqavilələr uyğunlaşdırılır
 MUQ_DOZUM = 0.01
+# müqavilə ilə yalnız sığorta haqqı ola biləcək mədaxillər tutuşdurulur; qaytarılma, depozit, faiz, ezamiyyə, əmək haqqı,
+# təlim, subroqasiya sığorta müqaviləsinə aid deyil
+MUQ_KATEQORIYALAR = ("sigorta_haqqi", "yoxlanmali", "diger")
 
 
 def _muq_basliq(fayl):
@@ -961,7 +964,7 @@ def bank_hesabat(s, muqavilesiz=False, ehate=None):
         kodlar0 = _inteqrasiya_kodlari(b, ehate, True)
         tutulan = {n for bolgu in qerar.values() for n, _ in bolgu if n}
         sira = [r for r in b["setirler"] if not r["muqavile"] and r["kateqoriya"] in kodlar0
-                and (ehate != "sigorta" or r["kateqoriya"] == "sigorta_haqqi")]
+                and r["kateqoriya"] in MUQ_KATEQORIYALAR and (ehate != "sigorta" or r["kateqoriya"] == "sigorta_haqqi")]
         sual = [(r, _namizedler(r, muqler, tutulan)) for r in sira if str(r["setir"]) not in qerar]
         sual = [(r, ms) for r, ms in sual if ms]
         if sual:

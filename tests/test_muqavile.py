@@ -62,19 +62,16 @@ def test_muhasibin_qerari_inteqrasiyaya_yazilir():
             plan = B.qayda(k, n["ui"]["variantlar"][0]["mesaj"])                     # mühasib təklifi qəbul edir
         elif s == 10:
             plan = B.qayda(k, "HS-2026000201-QS")                                     # nömrəni özü yazır
-        elif s == 14:
-            assert "yaxındır" in n["metn"]
-            plan = B.qayda(k, "14-cü sətir müqaviləsiz qalsın")                       # mühasib rədd edir
         else:
             plan = B.qayda(k, "Müqaviləsiz qalsın")
         n = getattr(B, plan[0])(k, **plan[1])
-    assert gorulen == [9, 10, 14, 15]
+    assert gorulen == [9, 15]                                                     # 14 — qaytarılma, 10 — təlim: müqaviləyə aid deyil
     while k.bank.get("madde_gozle"):                                                    # maddələr
         n = B.bank_madde(k, k.bank["madde_gozle"]["kod"], "M")
-    assert "2 mədaxilə müqavilə nömrəsi yazıldı (3 sətir)" in n["metn"]
+    assert "1 mədaxilə müqavilə nömrəsi yazıldı (2 sətir)" in n["metn"]
     rows = list(openpyxl.load_workbook(QOV / n["ui"]["fayllar"][0]["ad"])["Sheet1"].iter_rows(values_only=True))[1:]
     nom = {r[2]: r[4] for r in rows if r[2]}
-    assert nom == {"BS-2026000101-PS": 500.0, "BS-2026000102-PS": 411.0, "HS-2026000201-QS": 20.0, "HS-2026000001-QS": 2700.0}
+    assert nom == {"BS-2026000101-PS": 500.0, "BS-2026000102-PS": 411.0, "HS-2026000001-QS": 2700.0}
     assert len(rows) == 10                                                              # 9 daxilolma, 911 iki müqaviləyə bölündü
 
 
@@ -101,24 +98,34 @@ def test_hamisina_butun_muqavileler():
     n = B.bank_muqavile(k, **plan[1])                                           # 500 + 411 + 120 = 1031 > 911: sıra ilə paylanır
     assert k.bank["muq_qerar"]["9"] == [("BS-2026000101-PS", 500.0), ("BS-2026000102-PS", 411.0)]
     assert "pul müqavilələrə sıra ilə paylandı, 1 müqaviləyə çatmadı" in n["metn"]
-    assert k.bank["muq_gozle"] == 10
+    assert k.bank["muq_gozle"] == 15
     n = B.bank_muqavile(k, **B.qayda(k, "nə?")[1])                                # başa düşülməyən cavab: sual təkrarlanır
-    assert n["metn"].startswith("Cavabı başa düşmədim") and k.bank["muq_gozle"] == 10
+    assert n["metn"].startswith("Cavabı başa düşmədim") and k.bank["muq_gozle"] == 15
     assert B.qayda(k, "Bütün daxilolmalar")[1]["muqavile"] == "hamisi"           # cədvələ keçmir
 
 
 def test_hamisina_artiq_odenis():
     k = K()
     for m in k.muqavileler["siyahi"]:
-        if m["fin"] == "2BC3DE4":
-            m["aqrar"] = 3000.0                                                     # 2 × 3000 = 6000 < 7060
+        if m["fin"] == "1AB2CD3":
+            m["aqrar"] = 300.0                                                      # 3 × 300 = 900 < 911
     B.bank_hesabat(k)
     B.bank_hesabat(k, ehate="daxilolma")
-    while k.bank["muq_gozle"] != 14:
+    n = B.bank_muqavile(k, 9, "hamisi")
+    assert k.bank["muq_qerar"]["9"] == [("BS-2026000101-PS", 300.0), ("BS-2026000102-PS", 300.0), ("BS-2026000103-PS", 300.0), ("", 11.0)]
+    assert "artıq qalan 11,00 müqaviləsiz ayrıca sətirdir" in n["metn"]
+
+
+def test_qaytarilma_muqavileye_aid_deyil():
+    """Vəsaitin qaytarılması (və depozit, faiz, təlim...) müqavilə ilə tutuşdurulmur, FİN uyğun gəlsə belə."""
+    k = K()
+    B.bank_hesabat(k)
+    B.bank_hesabat(k, ehate="daxilolma")
+    gorulen = []
+    while k.bank.get("muq_gozle") is not None:
+        gorulen.append(k.bank["muq_gozle"])
         B.bank_muqavile(k, k.bank["muq_gozle"], "yox")
-    n = B.bank_muqavile(k, 14, "hamisi")
-    assert k.bank["muq_qerar"]["14"] == [("BS-2026000301-AS", 3000.0), ("BS-2026000302-AS", 3000.0), ("", 1060.0)]
-    assert "artıq qalan 1 060,00 müqaviləsiz ayrıca sətirdir" in n["metn"]
+    assert 14 not in gorulen and 10 not in gorulen                                # qaytarılma və təlim
 
 
 def test_teyinata_gore_hs_ve_bs():

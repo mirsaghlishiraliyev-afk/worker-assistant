@@ -678,4 +678,4 @@ def test_cixaris_sablon_ve_muqavile_birlikde():
     sohbet = lambda m: c.post("/api/sohbet", json={"mesaj": m}).json()  # noqa: E731
     sohbet("Şablonu doldur")
     r = sohbet("İnteqrasiyaya bütün daxilolmalar")
-    assert r["cavab"].startswith("Müqavilə 1/4: 9-ci sətir") and "uyğundur" in r["cavab"]
+    assert r["cavab"].startswith("Müqavilə 1/2: 9-ci sətir") and "uyğundur" in r["cavab"]   # qaytarılma, təlim — müqaviləsiz
