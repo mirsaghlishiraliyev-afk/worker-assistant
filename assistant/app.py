@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from . import __version__, llm
 from . import giris as G
+from . import profil as PR
 from . import sohbet as SB
 from . import tarixce as TR
 from . import kitabxana as KB
@@ -207,6 +208,25 @@ def sohbet_sil(sid: str):
     return {"ok": True}
 
 
+# ---------------- profil: istifadəçinin peşələri ----------------
+class Profil(BaseModel):
+    peseler: list[str] = []
+    diger: str = ""
+
+
+@app.get("/api/profil")
+def profil_al():
+    return {"profil": PR.al(_CARI.get()), "peseler": PR.PESELER}
+
+
+@app.put("/api/profil")
+def profil_saxla(p: Profil):
+    try:
+        return {"profil": PR.saxla(_CARI.get(), p.peseler, p.diger)}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 class Tesdiq(BaseModel):
     odenis_id: str
     qaime_id: str
@@ -231,6 +251,7 @@ def veziyyet(request: Request = None):
             "xulase": T.xulase(S)["ui"] if S.hazir else None,
             "teklifler": getattr(S, "teklifler", []),
             "istifadeci": {"ad": u.get("a") or u["l"], "login": u["l"]} if u else None,
+            "profil": PR.al(_CARI.get()), "peseler": PR.PESELER,
             "sablon": S.sablon["ad"] if getattr(S, "sablon", None) else None,
             "bank": ({"daxilolma": len(S.bank["setirler"]), "yoxlanmali": sum(r["kateqoriya"] == "yoxlanmali" for r in S.bank["setirler"]),
                       "sual": len(BANK._sual_setirleri(S.bank)),

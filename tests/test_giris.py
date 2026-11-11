@@ -405,3 +405,21 @@ def test_gmail_icaze_yoxlamasi(monkeypatch):
     monkeypatch.setenv("WA_ICAZELI", "")
     with pytest.raises(G.GirisXetasi, match="siyahısı qurulmayıb"):            # siyahısız Gmail girişi bağlıdır
         G.google_iddia_yoxla(_iddia())
+
+
+# ---------------- peşələr: girişdən sonra soruşulur və yadda qalır ----------------
+def test_pesheler_sorusulur_ve_yadda_qalir():
+    _qur()
+    a, b = TestClient(app), TestClient(app)
+    _gir(a, "aynur", "Parol1")
+    _gir(b, "resad", "Parol2")
+    v = a.get("/api/veziyyet").json()
+    assert v["profil"] is None and any(p["kod"] == "muhasib" for p in v["peseler"])   # seçilməyib: interfeys soruşur
+    assert a.put("/api/profil", json={"peseler": [], "diger": " "}).status_code == 400  # boş seçim qəbul olunmur
+    r = a.put("/api/profil", json={"peseler": ["muhasib", "yoxdur", "muhasib"], "diger": "  satınalma   mütəxəssisi "})
+    assert r.json()["profil"] == {"peseler": ["muhasib"], "diger": "satınalma mütəxəssisi"}
+    assert TestClient(app, cookies=a.cookies).get("/api/veziyyet").json()["profil"]["peseler"] == ["muhasib"]   # yeni brauzerdə də
+    assert b.get("/api/veziyyet").json()["profil"] is None                                # başqa istifadəçinin seçimi ayrıdır
+    from assistant import profil as PR
+    assert PR.modullar({"peseler": ["muhasib", "huquq"]}) == ["bank", "muhasibat", "excel", "muqavile"]
+    assert {m for p in PR.PESELER for m in p["modullar"]} <= {m["kod"] for m in __import__("assistant.tools", fromlist=["x"]).modullar()}

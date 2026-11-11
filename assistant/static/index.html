@@ -235,6 +235,27 @@ main.bos .hazirlar{display:none!important}  /* boş ekranda sorğular aşağıda
   .marka{letter-spacing:.16em;font-size:14px}
   header .sag .fayl-ad{display:none}
 }
+/* peşə seçimi (girişdən sonra bir dəfə) */
+#pesePenc{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:16px;background:rgba(0,0,0,.78)}
+#pesePenc[hidden]{display:none}
+#pesePenc .pk{width:100%;max-width:520px;max-height:calc(100vh - 32px);overflow:auto;background:linear-gradient(180deg,var(--panel-2),var(--panel));
+  border:1px solid var(--line-2);border-radius:4px;padding:24px 22px}
+#pesePenc h2{margin:0 0 6px;font:700 14px var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--ink)}
+#pesePenc p{margin:0 0 16px;color:var(--muted);font-size:14px}
+#pesePenc .ps{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
+#pesePenc label.pe{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:2px;cursor:pointer}
+#pesePenc label.pe:has(input:checked){border-color:var(--red);background:rgba(255,42,42,.08)}
+#pesePenc label.pe input{margin-top:3px;accent-color:var(--red)}
+#pesePenc label.pe b{display:block;color:var(--ink);font-weight:600}
+#pesePenc label.pe span{color:var(--muted);font-size:12.5px}
+#pesePenc .dg{display:block;margin:12px 0 0;font:700 10px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--amber)}
+#pesePenc input.dgi{width:100%;margin-top:5px;padding:9px 11px;background:#000;border:1px solid #2a2a2e;border-radius:2px;color:var(--ink);font:inherit}
+#pesePenc .alt{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+#pesePenc .alt button{padding:10px 16px;border-radius:2px;font:700 12px var(--mono);letter-spacing:.16em;text-transform:uppercase;cursor:pointer;
+  background:#1a0505;border:1px solid var(--red);color:#fff}
+#pesePenc .alt button.ikinci{background:transparent;border-color:#2a2a2e;color:var(--muted)}
+#pesePenc .xt{color:#ff8a80;font-size:13px;margin-top:10px;min-height:1em}
+.mod.menim{color:var(--ink)}
 </style>
 </head>
 <body>
@@ -309,6 +330,15 @@ main.bos .hazirlar{display:none!important}  /* boş ekranda sorğular aşağıda
   </main>
 </div>
 
+<div id="pesePenc" hidden role="dialog" aria-modal="true" aria-labelledby="peseBas"><form class="pk" id="peseForm">
+  <h2 id="peseBas">Hansı işlərlə məşğulsunuz?</h2>
+  <p>Peşənizi seçin — bir neçəsini də seçə bilərsiniz. Uyğun modulları öndə göstərəcəyəm. Seçim yadda qalır, sonra «Peşələrim»dən dəyişə bilərsiniz.</p>
+  <div class="ps" id="peseSiyahi"></div>
+  <label class="dg" for="peseDiger">Digər (siyahıda yoxdursa yazın)</label>
+  <input class="dgi" id="peseDiger" maxlength="80" placeholder="məs. satınalma mütəxəssisi">
+  <div class="xt" id="peseXeta"></div>
+  <div class="alt"><button type="button" class="ikinci" id="peseLegv" hidden>Ləğv et</button><button type="submit">Yadda saxla</button></div>
+</form></div>
 <script>
 const $ = s => document.querySelector(s);
 // giriş müddəti bitəndə (401) — giriş səhifəsinə
@@ -404,7 +434,7 @@ function sideAlt(r){
   $("#faylBas").textContent = ad + (r.uzlasma ? " · " + r.dovr_sonu.split("-").reverse().join(".") : "");
 }
 // Server versiyası: kod yenilənib, server köhnə qalıbsa, bu yazı köhnə versiyanı göstərir
-const UI_VERSIYA = "1.4.0";
+const UI_VERSIYA = "1.5.0";
 function versiyaCiz(r){
   let el = $("#versiya");
   if(!el){ el = document.createElement("div"); el.id = "versiya"; el.style.cssText = "font:10.5px var(--mono);color:var(--dim);padding:6px 8px 0"; $("#yan").appendChild(el); }
@@ -421,13 +451,25 @@ function versiyaCiz(r){
   const u = window.waIstifadeci;
   el.innerHTML = (u ? `<div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:4px;color:var(--text)">
       <span title="${esc(u.login)}">👤 ${esc(u.ad)}</span><a href="/cixis" style="color:var(--red);text-decoration:none">Çıxış</a></div>` : "") +
+    `<div style="margin-bottom:4px"><a href="#" id="peseDeyis" style="color:var(--muted)">Peşələrim${pesePrf ? ": " + esc([...(pesePrf.peseler || []).map(k => peseSiyahisi.find(p => p.kod === k)?.ad || k), pesePrf.diger].filter(Boolean).join(", ")) : ""}</a></div>` +
     `Server v${esc(r.versiya || "?")} · başladı ${esc(r.baslama || "?")}` +
     (kohne ? `<div style="color:var(--amber)">Server köhnə versiyadadır. Ctrl+C, sonra python -m assistant.</div>` : "");
 }
+// İstifadəçinin peşələrinə uyğun modullar öndə; boş ekrandakı nümunə sorğular da onlardan
+let pesePrf = null, peseSiyahisi = [];
+function peseModullari(){
+  const out = [];
+  for(const k of (pesePrf?.peseler || [])) for(const m of (peseSiyahisi.find(p => p.kod === k)?.modullar || [])) if(!out.includes(m)) out.push(m);
+  return out;
+}
+document.addEventListener("click", e => { if(e.target.id === "peseDeyis"){ e.preventDefault(); peseAc(true); } });
 function modullarCiz(mods){
-  $("#modullar").innerHTML = (mods || []).map(m => `<div class="mod ${m.status === "aktiv" ? "" : "plan"}" title="${esc(m.tesvir)}">
+  const menim = peseModullari();
+  mods = [...(mods || [])].sort((a, b) => (menim.includes(a.kod) ? menim.indexOf(a.kod) : 99) - (menim.includes(b.kod) ? menim.indexOf(b.kod) : 99));
+  $("#modullar").innerHTML = mods.map(m => `<div class="mod ${m.status === "aktiv" ? "" : "plan"} ${menim.includes(m.kod) ? "menim" : ""}" title="${esc(m.tesvir)}">
     <span class="nq"></span>${esc(m.ad)}${m.status === "aktiv" ? "" : '<span class="etiket">tezliklə</span>'}</div>`).join("");
-  modulKartlari = (mods || []).filter(m => m.status === "aktiv").flatMap(m => (m.teklifler || []).map(t =>
+  const uygun = mods.filter(m => m.status === "aktiv" && menim.includes(m.kod));
+  modulKartlari = (uygun.length ? uygun : mods.filter(m => m.status === "aktiv")).flatMap(m => (m.teklifler || []).map(t =>
     `<button class="teklif" data-s="${esc(t.s)}"><span class="modad">${esc(m.ad)}</span><b>${esc(t.b)}</b><span>${esc(t.a)}</span></button>`)).join("");
   kartlariCiz();
 }
@@ -454,8 +496,32 @@ async function veziyyet(){
   const el = $("#rejim"), kod = r.rejim_kod || "qayda";
   el.className = "rejim " + kod; el.dataset.tip = r.rejim; el.setAttribute("aria-label", r.rejim);
   el.innerHTML = REJIM_IKON[kod] || REJIM_IKON.qayda;
-  sideAlt(r); modullarCiz(r.modullar); versiyaCiz(r); return r;
+  pesePrf = r.profil || null; peseSiyahisi = r.peseler || [];
+  sideAlt(r); modullarCiz(r.modullar); versiyaCiz(r);
+  if(!r.profil && !window.peseSoruldu){ window.peseSoruldu = true; peseAc(false); }  // peşə seçilməyib: soruş
+  return r;
 }
+// ---------- peşə seçimi ----------
+function peseAc(legvOlar){
+  const sec = new Set(pesePrf?.peseler || []);
+  $("#peseSiyahi").innerHTML = peseSiyahisi.map(p => `<label class="pe"><input type="checkbox" value="${esc(p.kod)}" ${sec.has(p.kod) ? "checked" : ""}>
+    <div><b>${esc(p.ad)}</b><span>${esc(p.tesvir)}</span></div></label>`).join("");
+  $("#peseDiger").value = pesePrf?.diger || ""; $("#peseXeta").textContent = "";
+  $("#peseLegv").hidden = !legvOlar;
+  $("#pesePenc").hidden = false;
+  ($("#peseSiyahi input") || $("#peseDiger")).focus();
+}
+$("#peseLegv").onclick = () => { $("#pesePenc").hidden = true; };
+$("#peseForm").onsubmit = async e => {
+  e.preventDefault();
+  const peseler = [...document.querySelectorAll("#peseSiyahi input:checked")].map(x => x.value), diger = $("#peseDiger").value.trim();
+  if(!peseler.length && !diger){ $("#peseXeta").textContent = "Ən azı bir peşə seçin və ya «Digər» sahəsinə yazın."; return; }
+  const r = await fetch("/api/profil", {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({peseler, diger})});
+  const j = await r.json().catch(() => ({}));
+  if(!r.ok){ $("#peseXeta").textContent = j.detail || "Yadda saxlanmadı, yenidən cəhd edin."; return; }
+  pesePrf = j.profil; $("#pesePenc").hidden = true;
+  veziyyet();
+};
 
 // ---------- mətn formatı (sadə markdown) ----------
 function md(t){
