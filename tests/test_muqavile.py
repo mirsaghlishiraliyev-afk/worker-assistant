@@ -72,7 +72,7 @@ def test_muhasibin_qerari_inteqrasiyaya_yazilir():
     rows = list(openpyxl.load_workbook(QOV / n["ui"]["fayllar"][0]["ad"])["Sheet1"].iter_rows(values_only=True))[1:]
     nom = {r[2]: r[4] for r in rows if r[2]}
     assert nom == {"BS-2026000101-PS": 500.0, "BS-2026000102-PS": 411.0, "HS-2026000001-QS": 2700.0}
-    assert len(rows) == 10                                                              # 9 daxilolma, 911 iki müqaviləyə bölündü
+    assert len(rows) == 8 and all(r[1] for r in rows)       # 9 daxilolma, 911 iki müqaviləyə bölündü, FİN-siz 2 sətir düşmür
 
 
 def test_qalanlari_kec_ve_yalniz_sigorta():

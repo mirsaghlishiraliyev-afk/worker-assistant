@@ -261,8 +261,9 @@ def test_her_kateqoriyanin_maddesi_sorusulur():
         n = T_cagir(k, plan)
     assert sorusulan == ["sigorta_haqqi", "ezamiyye", "telim", "qaytarilma", "depozit", "faiz", "yoxlanmali"]
     rows = list(openpyxl.load_workbook(QOV / n["ui"]["fayllar"][0]["ad"])["Sheet1"].iter_rows(values_only=True))[1:]
-    assert len(rows) == 8                                                          # 9 daxilolma − faiz (maddəsi verilmədi)
-    assert {r[5] for r in rows} == {"1C sigorta_haqqi", "1C ezamiyye", "1C telim", "1C qaytarilma", "1C depozit", "1C yoxlanmali"}
+    assert len(rows) == 6                                     # 9 daxilolma − faiz (maddəsi verilmədi) − 2 FİN/VÖEN-siz (8, 15)
+    assert {r[5] for r in rows} == {"1C sigorta_haqqi", "1C ezamiyye", "1C telim", "1C qaytarilma", "1C depozit"}
+    assert all(r[1] for r in rows)                                                # hamısında Sığortalı Fin/Voen var
     assert "Depozit faizləri" in n["metn"] and "salınmadı" in n["metn"]
     B.bank_hesabat(k)                                                               # növbəti doldurma: yenə hər şey soruşulur
     n = B.bank_hesabat(k, ehate="daxilolma")
@@ -280,7 +281,11 @@ def test_mexaric_de_inteqrasiyaya():
     assert len(k.bank["mexaricler"]) == 1 and k.bank["mexaricler"][0]["mebleg"] < 0   # məxaric ayrıca oxunur
     n = _hazirla(k, ehate="hamisi")
     rows = list(openpyxl.load_workbook(QOV / n["ui"]["fayllar"][0]["ad"])["Sheet1"].iter_rows(values_only=True))[1:]
-    assert len(rows) == 10 and any(r[4] < 0 and r[5] == "M mexaric" for r in rows)  # 9 daxilolma + 1 məxaric (mənfi)
+    assert len(rows) == 7 and all(r[4] > 0 for r in rows)   # 7 FİN-li daxilolma; məxaricin FİN/VÖEN-i yoxdur — düşmür
+    wb = openpyxl.load_workbook(QOV / n["ui"]["fayllar"][1]["ad"])
+    finsiz = list(wb["FİN-VÖEN yoxdur"].iter_rows(min_row=2, values_only=True))
+    assert [r[0] for r in finsiz] == [8, 15, 13] and finsiz[-1][3] < 0               # yoxlama faylında ayrıca (məxaric də)
+    assert "Sığortalı Fin/Voen olmayan" in n["metn"]
 
 
 def T_cagir(s, plan):

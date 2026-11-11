@@ -1015,10 +1015,18 @@ def bank_hesabat(s, muqavilesiz=False, ehate=None):
 
     hesab_no = (b.get("meta") or {}).get("hesab", "")  # Aqrar Sığorta Fondunun pul daxil olan hesabı (çıxarışın başlığından)
 
-    def inteqrasiya(r):  # mühasibin seçdiyi sətirlər; maddəsi boş saxlanan kateqoriya və təkrar ola biləcəklər düşmür
+    def fin_voen(r):
+        return r.get("t_fin_voen") or r.get("fin") or r.get("voen") or ""
+
+    def secilib(r):  # mühasibin seçdiyi sətirlər; maddəsi boş saxlanan kateqoriya və təkrar ola biləcəklər düşmür
         if r["setir"] in tekrar or r["kateqoriya"] not in kodlar or r["kateqoriya"] in bos:
             return False
         return r["kateqoriya"] != "sigorta_haqqi" or bool(r["muqavile"] or qerar.get(str(r["setir"])) or muqavilesiz)
+
+    def inteqrasiya(r):  # + Sığortalı Fin/Voen olmalıdır: olmayan sətir 1C-yə düşmür (yoxlama faylında ayrıca vərəqdə)
+        if not fin_voen(r):
+            return False
+        return secilib(r)
     butun = b["setirler"] + (b.get("mexaricler", []) if ehate == "hamisi" else [])
 
     def setirler_1c(r):  # FİN/VÖEN və ödəyicinin hesabı təyinatdan; mühasibin seçdiyi müqavilələr — hər biri ayrıca sətir
@@ -1043,6 +1051,13 @@ def bank_hesabat(s, muqavilesiz=False, ehate=None):
                 w1.append(x + [r["setir"], r["odeyici"], r["teyinat"], qeyd(r)])
     for c in w1[1][len(SUTUNLAR_1C):]:
         c.fill = PatternFill("solid", fgColor="E8E8E8")
+    finsiz = [r for r in butun if secilib(r) and not fin_voen(r)]
+    if finsiz:  # seçilən, amma FİN/VÖEN olmadığı üçün inteqrasiyaya düşməyən sətirlər — 1C-yə əl ilə
+        wf = wb.create_sheet("FİN-VÖEN yoxdur")
+        wf.append(["Çıxarış sətri", "Tarix", "Ödəyici", "Məbləğ", "Təyinat", "Kateqoriya", "Qeyd"])
+        for r in finsiz:
+            wf.append([r["setir"], r["tarix"], r["odeyici"], r["mebleg"], r["teyinat"], _kat(r["kateqoriya"])["ad"],
+                       "Sığortalı Fin/Voen yoxdur — inteqrasiyaya düşmür, 1C-yə əl ilə"])
     w2 = wb.create_sheet("Sığorta haqları (müqaviləsiz)")
     w2.append(["Çıxarış sətri", "Tarix", "Ödəyici", "FİN/VÖEN", "Məbləğ", "Təyinat", "Qeyd"])
     for r in b["setirler"]:
@@ -1135,7 +1150,10 @@ def bank_hesabat(s, muqavilesiz=False, ehate=None):
     maddeler = "; ".join(f"{_kat(k)['ad']} — «{md(k)}»" for k in kodlar if k not in bos)
     bas += f" Hesab nömrəsi: {hesab_no or '— (çıxarışda tapılmadı)'}. Maddələr: {maddeler}."
     bas += " Yanında yoxlama faylı da var" + (f" ({yox} sətir «Yoxlanmalı»)" if yox else "") + "."
-    return {"metn": bas + (f" {natamam} sətirdə FİN/VÖEN tapılmadı — «Qeyd» sütununa baxın." if natamam else ""),
+    if finsiz:
+        bas += (f" Sığortalı Fin/Voen olmayan {len(finsiz)} sətir ({_f(sum(r['mebleg'] for r in finsiz))} AZN) inteqrasiyaya düşmədi — "
+                f"yoxlama faylında «FİN-VÖEN yoxdur» vərəqindədir.")
+    return {"metn": bas + (f" {natamam} sətirdə qeyd var — «Qeyd» sütununa baxın." if natamam else ""),
             "ui": {"tip": "fayllar", "fayllar": [{"ad": ad_1c, "url": "/api/fayl/" + quote(ad_1c)}, {"ad": ad, "url": "/api/fayl/" + quote(ad)}]}}
 
 
