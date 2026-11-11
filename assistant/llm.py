@@ -12,6 +12,7 @@ from . import tools as T
 from .modullar import bank as BANK
 from .modullar import excel as EX
 from .modullar import qebul as QB
+from .modullar import stok as STOK
 
 EX_CAVAB = {
     "excel_xulase": "Faylın strukturu aşağıdadır. Hansı vərəq və ya sütunla işləyək?",
@@ -91,8 +92,8 @@ class QaydaMuherriki:
                     f"(Kredit/Mədaxil və Təyinat sütunları olan vərəq tapılmadı). Bank çıxarışını «⟳ Faylı dəyiş» ilə yükləyin — "
                     f"sual avtomatik cavablandırılacaq. Bu faylda səhvləri axtarmaq üçün «Problemləri tap» yazın."), []
 
-        # Diş klinikası: qəbul jurnalı və WhatsApp mesajları (Excel sorğularından əvvəl)
-        plan = QB.qayda(s, mesaj)
+        # Diş klinikası: stok (rəhbərin telefonu da) və qəbul jurnalı, WhatsApp mesajları (Excel sorğularından əvvəl)
+        plan = STOK.qayda(s, mesaj) or QB.qayda(s, mesaj)
         if plan:
             netice = et(plan[0], **plan[1])
             return netice["metn"], hadiseler

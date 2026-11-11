@@ -8,6 +8,7 @@ import re
 from .modullar import bank as BANK
 from .modullar import excel as EX
 from .modullar import qebul as QB
+from .modullar import stok as STOK
 
 MAKS = 8
 
@@ -114,7 +115,7 @@ def _yoxla(s, sorgu):
         if getattr(s, "bank", None):
             return BANK.qayda(s, sorgu) is not None
         if s.excel:
-            return QB.qayda(s, sorgu) is not None or EX.qayda(s, sorgu) is not None
+            return any(m.qayda(s, sorgu) is not None for m in (STOK, QB, EX))
     except Exception:
         return False
     return True
@@ -127,6 +128,11 @@ def hazirla(s):
             out = _bank(s)
         elif s.hazir:
             out = _uzlasma(s)
+        elif s.excel and STOK._vereq(s)[1]:  # stok (diş klinikası)
+            d = STOK.stok(s)
+            az = len(STOK._azalanlar(d)) if d else 0
+            out = (["Stok vəziyyəti"] + ([f"Azalan məhsulları göstər ({az})", "Rəhbərə stok bildirişi hazırla",
+                                          "Təchizatçılara sifariş hazırla"] if az else []) + _excel(s))
         elif s.excel and QB._vereq(s)[1]:  # qəbul jurnalı (diş klinikası)
             out = ["Qəbulları göstər", "Təsdiq mesajlarını hazırla", "Xatırlatmaları hazırla"] + _excel(s)
         elif s.excel:

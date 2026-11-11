@@ -33,6 +33,27 @@ Hörmətli {{1}}! {{2}} {{3}} qəbulunuzdadır. Müraciət səbəbi: {{4}}. İş
 
 Parametrlər: {{1}} həkim, {{2}} qəbul vaxtı, {{3}} xəstənin adı, {{4}} müraciət səbəbi, {{5}} pasiyentin nömrəsi
 
+
+## Stok nəzarəti (diş klinikası)
+
+### `stok_rehber` — Rəhbərə stok bildirişi
+
+```
+Salam! Klinikanın stokunda {{1}} məhsul minimum həddən azdır: {{2}}. Təchizatçılara sifariş göndərmək üçün Worker's Assistant-da «Təchizatçılara sifariş hazırla» seçin.
+```
+
+Parametrlər: {{1}} azalan məhsulların sayı, {{2}} məhsullar siyahısı (nöqtəli vergüllə)
+
+### `stok_sifaris` — Təchizatçıya sifariş
+
+```
+Salam, {{1}}! Diş klinikası üçün sifariş vermək istəyirik: {{2}}. Xahiş edirik, mövcudluğu, qiyməti və çatdırılma vaxtını bildirin. Təşəkkür edirik.
+```
+
+Parametrlər: {{1}} təchizatçının adı, {{2}} məhsullar siyahısı (nöqtəli vergüllə)
+
+Rəhbərin nömrəsi: `WA_REHBER_TEL` və ya çatda «Rəhbərin telefonu 050 123 45 67». Təchizatçıların nömrələri stok faylının «Təchizatçının telefonu» sütunundan götürülür.
+
 ## Qoşulma
 
 1. Meta for Developers-də tətbiq yaradın, WhatsApp məhsulunu əlavə edin, klinikanın nömrəsini qoşun.

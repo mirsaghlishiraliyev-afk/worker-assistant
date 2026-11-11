@@ -54,9 +54,11 @@ PESELER = [
          {"s": "Məbləğ cəmi xidmət üzrə", "b": "Xidmətlər üzrə məbləğ", "a": "plomb, kanal, implant… hər birindən nə qədər"},
          {"s": "Məbləğ cəmi xəstə üzrə", "b": "Xəstələr üzrə məbləğ", "a": "hansı xəstəyə nə qədər xidmət göstərilib"},
          {"s": "Fayldakı problemləri tap", "b": "Jurnalda səhvlər", "a": "təkrar qəbul, boş xanalar, qeyri-adi məbləğlər"}]},
-    {"kod": "klinika_rehber", "ad": "Diş klinikasının rəhbəri", "tesvir": "qəbullar, həkimlər, xidmətlər, gəlir", "modullar": ["qebul", "excel"],
+    {"kod": "klinika_rehber", "ad": "Diş klinikasının rəhbəri", "tesvir": "qəbullar, stok, həkimlər, gəlir", "modullar": ["qebul", "stok", "excel"],
      "heller": [
          {"s": "Qəbulları göstər", "b": "Qəbul jurnalı", "a": "kim, nə vaxt, hansı həkimdə; telefonu olmayanlar"},
+         {"s": "Azalan məhsulları göstər", "b": "Stokda azalan məhsullar", "a": "nə bitib, nə sifariş edilməlidir"},
+         {"s": "Təchizatçılara sifariş hazırla", "b": "Təchizatçıya sifariş", "a": "WhatsApp: hər təchizatçıya öz məhsulları"},
          {"s": "Xatırlatmaları hazırla", "b": "Qəbula yaxın xatırlatma", "a": "pasiyentə və həkimə WhatsApp"},
          {"s": "Məbləğ cəmi həkim üzrə", "b": "Həkimlər üzrə gəlir", "a": "hər həkimin göstərdiyi xidmətlərin məbləği"},
          {"s": "Ödənilib cəmi həkim üzrə", "b": "Həkimlər üzrə ödənilən", "a": "xəstələrin faktiki ödədiyi məbləğ"},

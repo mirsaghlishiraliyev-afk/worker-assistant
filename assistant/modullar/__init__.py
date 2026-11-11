@@ -7,9 +7,9 @@ Hər modul bir iş sahəsidir (mühasibat, kadrlar, sənəd dövriyyəsi...) və
 
 Yeni modul əlavə etmək: bu qovluqda fayl yaradın və aşağıdakı AKTIV siyahısına əlavə edin.
 """
-from . import bank, excel, muhasibat, qebul
+from . import bank, excel, muhasibat, qebul, stok
 
-AKTIV = [bank, muhasibat, qebul, excel]
+AKTIV = [bank, muhasibat, qebul, stok, excel]
 
 # Hələ qurulmayan, amma yol xəritəsində olan sahələr (interfeysdə "tezliklə" kimi görünür)
 PLANLASDIRILIR = [
