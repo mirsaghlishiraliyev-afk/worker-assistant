@@ -85,3 +85,37 @@ def test_qalanlari_kec_ve_yalniz_sigorta():
     assert k.bank["muq_gozle"] == 9                                                    # yalnız sığorta haqqı soruşulur
     n = B.bank_muqavile(k, **B.qayda(k, "Qalan müqavilələri keç")[1])
     assert k.bank.get("muq_gozle") is None and "qalan mədaxillər müqaviləsiz" in n["metn"]
+
+
+def test_hamisina_butun_muqavileler():
+    """Mühasib «hamısına» yazır: mədaxil bu FİN-in bütün müqavilələrinə; cəmdən artıq qalan müqaviləsiz ayrıca sətir."""
+    k = K()
+    B.bank_hesabat(k)
+    B.bank_hesabat(k, ehate="daxilolma")
+    assert k.bank["muq_gozle"] == 9
+    assert any(v["etiket"] == "Hamısına (3 müqavilə; cəmi 1 031,00)" for v in B._muq_suali(
+        k.bank, next(r for r in k.bank["setirler"] if r["setir"] == 9),
+        B._namizedler(next(r for r in k.bank["setirler"] if r["setir"] == 9), k.muqavileler["siyahi"], set()), 1, 4)["ui"]["variantlar"])
+    plan = B.qayda(k, "hamısına")
+    assert plan == ("bank_muqavile", {"setir": 9, "muqavile": "hamisi"})
+    n = B.bank_muqavile(k, **plan[1])                                           # 500 + 411 + 120 = 1031 > 911: sıra ilə paylanır
+    assert k.bank["muq_qerar"]["9"] == [("BS-2026000101-PS", 500.0), ("BS-2026000102-PS", 411.0)]
+    assert "pul müqavilələrə sıra ilə paylandı, 1 müqaviləyə çatmadı" in n["metn"]
+    assert k.bank["muq_gozle"] == 10
+    n = B.bank_muqavile(k, **B.qayda(k, "nə?")[1])                                # başa düşülməyən cavab: sual təkrarlanır
+    assert n["metn"].startswith("Cavabı başa düşmədim") and k.bank["muq_gozle"] == 10
+    assert B.qayda(k, "Bütün daxilolmalar")[1]["muqavile"] == "hamisi"           # cədvələ keçmir
+
+
+def test_hamisina_artiq_odenis():
+    k = K()
+    for m in k.muqavileler["siyahi"]:
+        if m["fin"] == "2BC3DE4":
+            m["aqrar"] = 3000.0                                                     # 2 × 3000 = 6000 < 7060
+    B.bank_hesabat(k)
+    B.bank_hesabat(k, ehate="daxilolma")
+    while k.bank["muq_gozle"] != 14:
+        B.bank_muqavile(k, k.bank["muq_gozle"], "yox")
+    n = B.bank_muqavile(k, 14, "hamisi")
+    assert k.bank["muq_qerar"]["14"] == [("BS-2026000301-AS", 3000.0), ("BS-2026000302-AS", 3000.0), ("", 1060.0)]
+    assert "artıq qalan 1 060,00 müqaviləsiz ayrıca sətirdir" in n["metn"]

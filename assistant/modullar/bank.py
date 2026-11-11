@@ -778,6 +778,9 @@ def _muq_suali(b, r, ms, novbe, cem):
         izah = "üst-üstə" if v["nov"] in ("deqiq", "kombo") else f"fərq {_f(v['ferq'])}"
         var.append({"etiket": f"{isare[v['nov']]} {nomre} ({_f(v['cem'])}; {izah})",
                     "mesaj": f"{r['setir']}-ci sətir müqaviləsi {', '.join(v['nomreler'])}", **({"esas": True} if v["nov"] in ("deqiq", "kombo") else {})})
+    if len(ms) > 1:  # bu FİN-in bütün müqavilələri (hər biri öz Aqrar sığorta haqqı ilə)
+        cem = round(sum(m["aqrar"] for m in ms), 2)
+        var.append({"etiket": f"Hamısına ({len(ms)} müqavilə; cəmi {_f(cem)})", "mesaj": "Hamısına"})
     var += [{"etiket": "Müqaviləsiz qalsın", "mesaj": f"{r['setir']}-ci sətir müqaviləsiz qalsın", "ikinci": True},
             {"etiket": "Qalanlarını keç", "mesaj": "Qalan müqavilələri keç", "ikinci": True}]
     return {"metn": metn, "ui": {"tip": "sual", "variantlar": var}}
@@ -797,21 +800,44 @@ def bank_muqavile(s, setir, muqavile=""):
     r = next((x for x in b["setirler"] if x["setir"] == int(setir)), None)
     if not r:
         return {"metn": f"{setir}-ci sətir daxilolmalar arasında yoxdur.", "ui": None}
+    siyahi = (getattr(s, "muqavileler", None) or {}).get("siyahi", [])
+    if norm(str(muqavile)).strip() == "anlasilmadi":  # sual açıqdır, cavab başa düşülmədi: sual yenidən verilir
+        b.pop("muq_gozle", None)
+        n = bank_hesabat(s)
+        return {"metn": "Cavabı başa düşmədim. Müqavilə nömrəsini yazın (bir neçəsini vergüllə), «Hamısına» — bu FİN-in bütün "
+                        "müqavilələrinə, «Müqaviləsiz qalsın» və ya «Qalanlarını keç».\n\n" + n["metn"], "ui": n["ui"]}
     if norm(str(muqavile)).strip() in ("yox", "muqavilesiz", ""):
         qerar[str(r["setir"])] = []
         metn = f"Oldu: {r['setir']}-ci sətir müqaviləsiz qalır."
     else:
-        nomreler = [x.upper() for x in re.findall(r"[A-Za-z]{2}-\d{4,}(?:-[A-Za-z]{1,4})?", str(muqavile))]
+        if norm(str(muqavile)).strip() == "hamisi":  # bu FİN-in bütün (uyğun statuslu) müqavilələri
+            tutulan = {n for k, bolgu in qerar.items() if k != str(r["setir"]) for n, _ in bolgu if n}
+            nomreler = [m["no"] for m in _namizedler(r, siyahi, tutulan)]
+        else:
+            nomreler = [x.upper() for x in re.findall(r"[A-Za-z]{2}-\d{4,}(?:-[A-Za-z]{1,4})?", str(muqavile))]
         if not nomreler:
             return {"metn": f"«{muqavile}» müqavilə nömrəsi kimi oxunmadı (məs.: BS-2024210561-PS).", "ui": None}
-        muqler = {m["no"]: m for m in (getattr(s, "muqavileler", None) or {}).get("siyahi", [])}
+        muqler = {m["no"]: m for m in siyahi}
+        qeyd = ""
         if len(nomreler) == 1:
             bolgu = [(nomreler[0], r["mebleg"])]  # bir müqavilə: ödənilən məbləğ olduğu kimi
-        else:  # bir neçə müqavilə: hər biri öz Aqrar sığorta haqqı ilə, qalıq sonuncuya
-            bolgu = [(n, muqler[n]["aqrar"] if n in muqler else 0.0) for n in nomreler]
-            bolgu[-1] = (bolgu[-1][0], round(r["mebleg"] - sum(x[1] for x in bolgu[:-1]), 2))
+        else:  # bir neçə müqavilə: hər biri öz Aqrar sığorta haqqı ilə
+            bolgu, qalan = [], r["mebleg"]
+            for n in nomreler:
+                pay = min(muqler[n]["aqrar"], round(qalan, 2)) if n in muqler else 0.0
+                if pay > 0:
+                    bolgu.append((n, round(pay, 2)))
+                    qalan = round(qalan - pay, 2)
+            cem = round(sum(muqler[n]["aqrar"] for n in nomreler if n in muqler), 2)
+            if qalan > MUQ_DOZUM:  # artıq ödənib: artıq qalan müqaviləsiz ayrıca sətir
+                bolgu.append(("", qalan))
+                qeyd = f" Diqqət: müqavilələrin cəmi {_f(cem)}, mədaxil {_f(r['mebleg'])} — artıq qalan {_f(qalan)} müqaviləsiz ayrıca sətirdir."
+            elif cem - r["mebleg"] > MUQ_DOZUM:
+                qeyd = (f" Diqqət: müqavilələrin cəmi {_f(cem)}, mədaxil isə {_f(r['mebleg'])} — pul müqavilələrə sıra ilə paylandı"
+                        + (f", {len(nomreler) - len(bolgu)} müqaviləyə çatmadı" if len(bolgu) < len(nomreler) else "") + ".")
         qerar[str(r["setir"])] = bolgu
-        metn = f"Oldu: {r['setir']}-ci sətir — " + ", ".join(f"{n} ({_f(m)})" for n, m in bolgu) + ". İnteqrasiya faylına yazılacaq."
+        metn = (f"Oldu: {r['setir']}-ci sətir — " + ", ".join(f"{n or 'müqaviləsiz'} ({_f(m)})" for n, m in bolgu) +
+                ". İnteqrasiya faylına yazılacaq." + qeyd)
     b.pop("muq_gozle", None)
     n = bank_hesabat(s)
     return {"metn": metn + "\n\n" + n["metn"], "ui": n["ui"]}
@@ -917,7 +943,7 @@ def bank_hesabat(s, muqavilesiz=False, ehate=None):
     qerar = b.setdefault("muq_qerar", {})
     if muqler and not b.get("muq_kec"):
         kodlar0 = _inteqrasiya_kodlari(b, ehate, True)
-        tutulan = {n for bolgu in qerar.values() for n, _ in bolgu}
+        tutulan = {n for bolgu in qerar.values() for n, _ in bolgu if n}
         sira = [r for r in b["setirler"] if not r["muqavile"] and r["kateqoriya"] in kodlar0
                 and (ehate != "sigorta" or r["kateqoriya"] == "sigorta_haqqi")]
         sual = [(r, _namizedler(r, muqler, tutulan)) for r in sira if str(r["setir"]) not in qerar]
@@ -1115,6 +1141,10 @@ def qayda(s, mesaj):
             return "bank_muqavile", {"setir": setir, "muqavile": "yox"}
         if re.search(r"\b[a-z]{2}-\d{4,}", n):
             return "bank_muqavile", {"setir": setir, "muqavile": mesaj}
+        if re.search(r"^\s*(hamisi|hamisina|butun\w*|hamisina aiddir|hamisi ucun)\b", n):
+            return "bank_muqavile", {"setir": setir, "muqavile": "hamisi"}
+        # başqa cavab: sual açıqdır — başqa sorğuya keçmir, sual izahla yenidən verilir
+        return "bank_muqavile", {"setir": setir, "muqavile": "anlasilmadi"}
     # sistem «inteqrasiyaya hansı sətirlər?» soruşub
     if s.bank.get("ehate_gozle") is not None and not m:
         eg = s.bank["ehate_gozle"]
