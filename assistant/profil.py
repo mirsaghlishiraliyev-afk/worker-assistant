@@ -57,7 +57,7 @@ PESELER = [
          {"s": "Məbləğ cəmi xidmət üzrə", "b": "Xidmətlər üzrə məbləğ", "a": "plomb, kanal, implant… hər birindən nə qədər"},
          {"s": "Məbləğ cəmi xəstə üzrə", "b": "Xəstələr üzrə məbləğ", "a": "hansı xəstəyə nə qədər xidmət göstərilib"},
          {"s": "Fayldakı problemləri tap", "b": "Jurnalda səhvlər", "a": "təkrar qəbul, boş xanalar, qeyri-adi məbləğlər"}]},
-    {"kod": "klinika_rehber", "ad": "Diş klinikasının rəhbəri", "tesvir": "qəbullar, stok, həkimlər, gəlir", "modullar": ["qebul", "stok", "teleb", "excel"],
+    {"kod": "klinika_rehber", "ust": "rehber", "ad": "Diş klinikasının rəhbəri", "tesvir": "qəbullar, stok, həkimlər, gəlir", "modullar": ["qebul", "stok", "teleb", "excel"],
      "heller": [
          {"s": "Stok tələblərini göstər", "b": "Həkimlərin stok tələbləri", "a": "təsdiq və ya rədd edin"},
          {"s": "Qəbulları göstər", "b": "Qəbul jurnalı", "a": "kim, nə vaxt, hansı həkimdə; telefonu olmayanlar"},

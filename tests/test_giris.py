@@ -505,7 +505,7 @@ def test_peseye_gore_telimat():
     c = TestClient(app)
     _gir(c, "aynur", "Parol1")
     r = c.put("/api/profil", json={"peseler": ["dis_hekimi", "klinika_rehber"]}).json()
-    assert [p["ad"] for p in r["telimat"]["peseler"]] == ["Diş həkimi", "Həkim", "Diş klinikasının rəhbəri"]   # həkim də daxildir
+    assert [p["ad"] for p in r["telimat"]["peseler"]] == ["Diş həkimi", "Həkim", "Diş klinikasının rəhbəri", "Rəhbər"]   # üst peşələr də
     r = c.post("/api/sohbet", json={"mesaj": "Təlimat"}).json()                       # fayl yüklənməyib, yenə də açılır
     ui = r["hadiseler"][0]["ui"]
     assert ui["tip"] == "telimat" and ui["peseler"][0]["addimlar"][0]["s"] == "Stoka tələb yaz"
@@ -531,3 +531,25 @@ def test_dis_hekimi_hekimin_altindadir():
     assert c.put("/api/profil", json={"peseler": ["dis_hekimi"]}).json()["profil"] == {"peseler": ["dis_hekimi"]}
     v = c.get("/api/veziyyet").json()
     assert v["pese_effektiv"] == ["dis_hekimi", "hekim"] and any(h["pese"] == "Həkim" for h in v["heller"])
+
+
+def test_klinika_rehberi_rehberin_altindadir():
+    """Diş klinikasının rəhbəri «Rəhbər»in alt peşəsidir: rəhbərin həlləri və təlimatı da gəlir, rəhbər hüquqları qalır."""
+    from assistant import profil as PR
+    from assistant.modullar import teleb as TELEB
+    prf = {"peseler": ["klinika_rehber"]}
+    assert PR.effektiv(prf) == ["klinika_rehber", "rehber"]
+    hl = PR.heller(prf)
+    assert hl[0]["pese"] == "Diş klinikasının rəhbəri" and {"Vəziyyət necədir?", "Debitor borcları göstər"} <= {h["s"] for h in hl}
+    assert [p["ad"] for p in PR.telimat(prf)["peseler"]] == ["Diş klinikasının rəhbəri", "Rəhbər"]
+    assert PR.effektiv({"peseler": ["rehber"]}) == ["rehber"]                         # adi rəhbər klinika rəhbəri olmur
+    _qur()
+    c = TestClient(app)
+    _gir(c, "resad", "Parol2")
+    c.put("/api/profil", json={"peseler": ["rehber"]})
+
+    class S:
+        istifadeci_login = "resad"
+    assert not TELEB.rehberdir(S())                                                  # tələbləri yalnız klinika rəhbəri təsdiq edir
+    c.put("/api/profil", json={"peseler": ["klinika_rehber"]})
+    assert TELEB.rehberdir(S())
