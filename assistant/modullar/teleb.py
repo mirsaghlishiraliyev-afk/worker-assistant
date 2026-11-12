@@ -268,7 +268,7 @@ def _qayda(s, mesaj):
         return "stok_teleb_yaz", tehlil(mesaj)
     # «Nə lazımdır?» sualından sonrakı cavab tələbdir — amma nömrəli (T-…) və ya əmr sözlü mesaj deyil
     if getattr(s, "teleb_gozle", False) and len(n.split()) <= 15 and not re.search(
-            r"\?|goster|xulase|legv|imtina|rehber|tesdiq|redd|gonder|bildir|sifaris|\bt-?\d{1,4}\b", n):
+            r"\?|goster|xulase|legv|imtina|rehber|tesdiq|redd|gonder|bildir|sifaris|techizat|\bt-?\d{1,4}\b", n):
         return "stok_teleb_yaz", tehlil(mesaj)
     if getattr(s, "teleb_gozle", False) and re.search(r"legv|imtina", n):
         s.teleb_gozle = False

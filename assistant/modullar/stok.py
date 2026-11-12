@@ -126,6 +126,13 @@ def stok(s):
         out.append({"setir": int(x["_setir"]), "mehsul": mehsul, "vahid": str(al("vahid") or "").strip(),
                     "qaliq": qaliq, "minimum": mn, "veziyyet": veziyyet, "sifaris": sif,
                     "techizatci": str(al("techizatci") or "").strip(), "tel": QB.telefon(al("tel"))})
+    yad = {norm(m["mehsul"]).strip(): m for m in _yaddasdaki_mehsullar()}
+    for m in out:  # faylda təchizatçı / telefon boşdursa — söhbətdə yazılmışı (yaddaşdan) götür
+        y = yad.get(norm(m["mehsul"]).strip())
+        if y and not m["techizatci"]:
+            m["techizatci"], m["tel"] = y["techizatci"], m["tel"] or y["tel"]
+        elif y and not m["tel"] and norm(y["techizatci"]) == norm(m["techizatci"]):
+            m["tel"] = y["tel"]
     _techizatcilari_yadda_saxla(out)
     return {"vereq": ad, "mehsullar": out}
 
@@ -257,8 +264,11 @@ def stok_rehbere(s, gonder=False):
     return n
 
 
-def stok_sifaris(s, gonder=False, techizatci=None):
-    """Azalan məhsullar üzrə təchizatçılara (hər birinə öz məhsulları ilə) WhatsApp sifariş mesajı."""
+NAMELUM = "Təchizatçı göstərilməyib"
+
+
+def _sifaris_qruplari(s, techizatci=None):
+    """(təchizatçı, tel) → məhsullar; və ya cavab (dict) — sifariş lazım deyilsə."""
     d = stok(s)
     faylsiz = d is None  # stok faylı açıq deyil: yalnız təsdiqlənmiş tələblər (təchizatçı yaddaşdan)
     if faylsiz:
@@ -286,10 +296,19 @@ def stok_sifaris(s, gonder=False, techizatci=None):
         return {"metn": "Sifariş lazım deyil: stokda azalan məhsul və təsdiqlənmiş tələb yoxdur.", "ui": None}
     qruplar = {}
     for m in az:
-        qruplar.setdefault((m["techizatci"] or "Təchizatçı göstərilməyib", m["tel"]), []).append(m)
+        qruplar.setdefault((m["techizatci"] or NAMELUM, m["tel"]), []).append(m)
     for t in uygunsuz:  # stokda olmayan yeni məhsul: təchizatçısı bilinmir
-        qruplar.setdefault(("Təchizatçı göstərilməyib", ""), []).append(
+        qruplar.setdefault((NAMELUM, ""), []).append(
             {"mehsul": t["mehsul"], "sifaris": t["miqdar"], "vahid": t["vahid"], "telebler": [t["no"]]})
+    return qruplar, faylsiz
+
+
+def stok_sifaris(s, gonder=False, techizatci=None):
+    """Azalan məhsullar üzrə təchizatçılara (hər birinə öz məhsulları ilə) WhatsApp sifariş mesajı."""
+    q = _sifaris_qruplari(s, techizatci)
+    if isinstance(q, dict):
+        return q
+    qruplar, faylsiz = q
     kartlar, kart_telebleri = [], []
     for (ad, tel), ms in qruplar.items():
         siyahi = "; ".join(f"{m['mehsul']} — {_goster(m['sifaris']) if m['sifaris'] else 'miqdarı dəqiqləşdirin'}{_vahid(m)}" for m in ms)
@@ -304,12 +323,38 @@ def stok_sifaris(s, gonder=False, techizatci=None):
         n["metn"] += f" Həkimlərin təsdiqlənmiş tələbləri də daxildir: {', '.join(tno)}."
     if faylsiz:
         n["metn"] = "Stok faylı açıq deyil — sifariş həkimlərin təsdiqlənmiş tələblərindən hazırlandı. " + n["metn"]
-        if uygunsuz:
-            n["metn"] += (" Təchizatçısı bilinməyən məhsullar var: təchizatçılar stok faylından yadda qalır — stok faylını bir dəfə "
-                          "yükləsəniz, sonrakı sifarişlərdə avtomatik tapılacaq.")
-    telsiz = [k["ad"] for k in kartlar if not k["tel"] and k["ad"] != "Təchizatçı göstərilməyib"]
+    namelum = [m["mehsul"] for (ad, _), ms in qruplar.items() if ad == NAMELUM for m in ms]
+    if namelum:
+        n["metn"] += (f" Təchizatçısı bilinməyən: {', '.join(namelum)}. Təchizatçını yazın, məs.: «Təchizatçı: Məmmədov Elçin "
+                      "050 123 45 67» — yadda qalacaq və sifariş ona hazırlanacaq.")
+    telsiz = [k["ad"] for k in kartlar if not k["tel"] and k["ad"] != NAMELUM]
     if telsiz:
-        n["metn"] += f" Telefonu olmayan: {', '.join(telsiz)} — stok faylında «Təchizatçının telefonu» sütununa yazın."
+        n["metn"] += f" Telefonu olmayan: {', '.join(telsiz)} — yazın, məs.: «Təchizatçı: {telsiz[0]} 050 123 45 67»."
+    return n
+
+
+def techizatci_teyin(s, techizatci, telefon=""):
+    """Söhbətdə yazılan təchizatçı (və telefonu) yadda saxlanır: təchizatçısı bilinməyən məhsullara (və ya eyni adlı
+    təchizatçının telefonu boş olan məhsullarına) yazılır, sonra sifariş yenidən hazırlanır."""
+    ad = re.sub(r"\s+", " ", str(techizatci or "")).strip(" :-—,.")
+    tel = QB.telefon(telefon) if telefon else ""
+    if telefon and not tel:
+        return {"metn": f"«{telefon}» nömrə kimi oxunmadı. Məs.: «Təchizatçı: {ad or 'Ad Soyad'} 050 123 45 67».", "ui": None}
+    if not ad:
+        return {"metn": "Təchizatçının adını yazın, məs.: «Təchizatçı: Məmmədov Elçin 050 123 45 67».", "ui": None}
+    q = _sifaris_qruplari(s)
+    if isinstance(q, dict):
+        return q
+    qruplar, _ = q
+    eyni = [m for (a, _t), ms in qruplar.items() if a != NAMELUM and norm(a) == norm(ad) for m in ms]
+    hedef = eyni or [m for (a, _t), ms in qruplar.items() if a == NAMELUM for m in ms]
+    if not hedef:
+        return {"metn": "Sifarişdə təchizatçısı bilinməyən məhsul yoxdur — hamısının təchizatçısı məlumdur.", "ui": None}
+    _techizatcilari_yadda_saxla([{"mehsul": m["mehsul"], "techizatci": ad, "tel": tel or m.get("tel", ""),
+                                  "vahid": m.get("vahid", "")} for m in hedef])
+    n = stok_sifaris(s)
+    n["metn"] = (f"Oldu: {', '.join(m['mehsul'] for m in hedef)} — təchizatçı {ad}" + (f" ({QB.tel_goster(tel)})" if tel else "")
+                 + ", yadda saxlandı. " + n["metn"])
     return n
 
 
@@ -328,6 +373,10 @@ def qayda(s, mesaj):
     m = re.search(r"rehber\w*\s+(?:telefonu|nomresi)\s+([+\d][\d\s\-()]{7,})$", n)
     if m:
         return "rehber_telefonu", {"telefon_nomresi": m.group(1)}
+    m = re.match(r"\s*t[əe]chizat[çc][ıi]\s*(?::\s*(?P<ad1>.*?)\s*(?P<tel1>\+?\d[\d\s\-()]{7,})?|\s+(?P<ad2>.*?)\s*"
+                 r"(?P<tel2>\+?\d[\d\s\-()]{7,}))\s*$", mesaj, re.I)
+    if m and (m["ad1"] or m["ad2"]):
+        return "techizatci_teyin", {"techizatci": m["ad1"] or m["ad2"], "telefon": (m["tel1"] or m["tel2"] or "").strip()}
     if not re.search(r"stok|anbar|azalan|biten|bitib|sifaris|techizatci|rehber", n):
         return None
     if not _vereq(s)[1]:  # stok faylı yoxdur: yalnız təsdiqlənmiş tələblər üzrə sifariş mümkündür
@@ -353,9 +402,11 @@ ALETLER = {
                      "açıq təsdiq etdikdə.", {"gonder": {"type": "boolean"}}),
     "stok_sifaris": (stok_sifaris, "Azalan məhsullar üzrə hər təchizatçıya WhatsApp sifariş mesajı. gonder=true YALNIZ istifadəçi "
                      "açıq təsdiq etdikdə.", {"gonder": {"type": "boolean"}, "techizatci": {"type": "string"}}),
+    "techizatci_teyin": (techizatci_teyin, "Təchizatçını (adı, WhatsApp nömrəsi) yadda saxlayır: sifarişdə təchizatçısı bilinməyən "
+                         "məhsullara yazılır, sifariş yenidən hazırlanır.", {"techizatci": {"type": "string"}, "telefon": {"type": "string"}}),
     "rehber_telefonu": (rehber_telefonu, "Klinika rəhbərinin WhatsApp nömrəsini yadda saxlayır.", {"telefon_nomresi": {"type": "string"}}),
 }
-MECBURI = {"rehber_telefonu": ["telefon_nomresi"]}
+MECBURI = {"rehber_telefonu": ["telefon_nomresi"], "techizatci_teyin": ["techizatci"]}
 
 MODUL = {
     "kod": "stok",

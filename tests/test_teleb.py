@@ -164,3 +164,9 @@ def test_legv_edilmisi_silmek(monkeypatch):
     TELEB.stok_teleb_yaz(s, "Maska", 1, "qutu")
     TELEB.status_deyis({"T-002"}, "tesdiq")
     assert "silinmir" in TELEB.stok_teleb_qerar(s, "T-002", "sil")["metn"]                 # təsdiqlənmiş sifarişə düşüb
+
+
+def test_gozleme_rejiminde_techizatci_teleb_sayilmir():
+    s = S()
+    s.teleb_gozle = True
+    assert TELEB.qayda(s, "Təchizatçı: Qafarov Anar 055 710 43 34") is None

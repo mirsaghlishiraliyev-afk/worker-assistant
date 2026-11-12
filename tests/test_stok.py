@@ -150,7 +150,7 @@ def test_stok_fayli_olmadan_tesdiqlenmis_telebler():
     plan = ST.qayda(bos, "Təchizatçılara sifariş hazırla")                     # fayl yoxdur, yenə də başa düşülür
     assert plan == ("stok_sifaris", {"gonder": False})
     n = ST.stok_sifaris(bos, **plan[1])                                        # təchizatçı hələ bilinmir
-    assert n["metn"].startswith("Stok faylı açıq deyil") and "stok faylını bir dəfə yükləsəniz" in n["metn"]
+    assert n["metn"].startswith("Stok faylı açıq deyil") and "Təchizatçı: " in n["metn"]
     assert [k["ad"] for k in n["ui"]["kartlar"]] == ["Təchizatçı göstərilməyib"]
     ST.stok(S())                                                               # stok faylı bir dəfə yükləndi — yadda qaldı
     n = ST.stok_sifaris(bos)
@@ -158,3 +158,35 @@ def test_stok_fayli_olmadan_tesdiqlenmis_telebler():
     assert "Kompozit plomb materialı (A2) — 7 ədəd" in k["DentalMed MMC"]["metn"]
     assert k["DentalMed MMC"]["link"].startswith("https://wa.me/994501112233")
     assert "Rentgen plyonkası — 50 ədəd" in k["Təchizatçı göstərilməyib"]["metn"]
+
+
+def test_techizatcini_sohbetde_yazmaq():
+    """Təchizatçı göstərilməyib → «Təchizatçı: Ad Soyad 055 ...» yazılır, yadda qalır, sifariş ona hazırlanır."""
+    class Bos:
+        excel = None
+    bos = Bos()
+    TELEB.stok_teleb_yaz(bos, "Əlcək", 5, "paket")
+    TELEB.stok_teleb_yaz(bos, "Ağrı kəsici", 2, "qutu")
+    TELEB.stok_teleb_qerar(bos, "hamisi", "təsdiq")
+    assert [k["ad"] for k in ST.stok_sifaris(bos)["ui"]["kartlar"]] == ["Təchizatçı göstərilməyib"]
+    plan = ST.qayda(bos, "Təchizatçı: Qafarov Anar 055 710 43 34")
+    assert plan == ("techizatci_teyin", {"techizatci": "Qafarov Anar", "telefon": "055 710 43 34"})
+    n = ST.techizatci_teyin(bos, **plan[1])
+    assert n["metn"].startswith("Oldu: Əlcək, Ağrı kəsici — təchizatçı Qafarov Anar")
+    k = n["ui"]["kartlar"]
+    assert [x["ad"] for x in k] == ["Qafarov Anar"] and k[0]["link"].startswith("https://wa.me/994557104334")
+    assert "Salam, Qafarov Anar!" in k[0]["metn"]
+    assert ST.qayda(bos, "Təchizatçı Qafarov Anar 0557104334")[0] == "techizatci_teyin"
+    assert ST.qayda(bos, "Təchizatçılara sifariş hazırla")[0] == "stok_sifaris"   # adi əmr qarışmır
+    assert [x["ad"] for x in ST.stok_sifaris(bos)["ui"]["kartlar"]] == ["Qafarov Anar"]   # yadda qaldı
+
+
+def test_telefonu_olmayan_techizatciya_telefon():
+    s = S()
+    n = ST.stok_sifaris(s)
+    telsiz = [k["ad"] for k in n["ui"]["kartlar"] if k.get("status") == "telefon yoxdur" and k["ad"] != "Təchizatçı göstərilməyib"]
+    if not telsiz:
+        pytest.skip("test faylında telefonsuz təchizatçı yoxdur")
+    n = ST.techizatci_teyin(s, telsiz[0], "050 999 88 77")
+    k = {x["ad"]: x for x in n["ui"]["kartlar"]}
+    assert k[telsiz[0]]["link"].startswith("https://wa.me/994509998877")
