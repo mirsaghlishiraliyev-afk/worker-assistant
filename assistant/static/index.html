@@ -290,13 +290,15 @@ main.bos .hazirlar{display:none!important}  /* boş ekranda sorğular aşağıda
 .wa-st.ok{color:var(--green)}.wa-st.no{color:var(--amber)}
 a.wa-link{background:linear-gradient(180deg,#25d366,#128c4a);border-color:#25d366;box-shadow:none}
 /* peşə seçimi (girişdən sonra bir dəfə) */
-#pesePenc{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:16px;background:rgba(0,0,0,.78)}
+#pesePenc{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.78);overflow:hidden}
 #pesePenc[hidden]{display:none}
-#pesePenc .pk{width:100%;max-width:520px;max-height:calc(100vh - 32px);overflow:auto;background:linear-gradient(180deg,var(--panel-2),var(--panel));
+#pesePenc .pk{width:min(520px, calc(100vw - 32px));min-width:0;max-height:calc(100vh - 32px);overflow:auto;background:linear-gradient(180deg,var(--panel-2),var(--panel));
   border:1px solid var(--line-2);border-radius:4px;padding:24px 22px}
 #pesePenc h2{margin:0 0 6px;font:700 14px var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--ink)}
 #pesePenc p{margin:0 0 16px;color:var(--muted);font-size:14px}
 #pesePenc .ps{columns:2 210px;column-gap:8px}  /* qəzet sütunları: boşluq qalmır, qrup bölünmür */
+@media (max-width:600px){#pesePenc .ps{columns:1}#pesePenc .pk{padding:20px 16px}}  /* telefon: bir sütun */
+#pesePenc label.pe div{min-width:0;overflow-wrap:anywhere}
 #pesePenc label.pe{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:2px;cursor:pointer}
 #pesePenc label.pe:has(input:checked){border-color:var(--red);background:rgba(255,42,42,.08)}
 #pesePenc .pe-qrup{display:grid;gap:8px;break-inside:avoid;margin-bottom:8px}
@@ -521,7 +523,7 @@ function sideAlt(r){
   $("#faylBas").textContent = ad + (r.uzlasma ? " · " + r.dovr_sonu.split("-").reverse().join(".") : "");
 }
 // Server versiyası: kod yenilənib, server köhnə qalıbsa, bu yazı köhnə versiyanı göstərir
-const UI_VERSIYA = "1.18.1";
+const UI_VERSIYA = "1.18.2";
 function versiyaCiz(r){
   let el = $("#versiya");
   if(!el){ el = document.createElement("div"); el.id = "versiya"; $("#yan").appendChild(el); }
