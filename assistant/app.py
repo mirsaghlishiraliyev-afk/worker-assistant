@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from . import __version__, llm
 from . import giris as G
+from . import hesab as H
 from . import profil as PR
 from . import sohbet as SB
 from . import tarixce as TR
@@ -59,7 +60,10 @@ class _Proksi:
 S = _Proksi()
 
 # ---------------- giriş (şirkət e-poçtu: IMAP mail.gov.az və ya domen) ----------------
-ACIQ = {"/saglamliq", "/giris", "/giris/google", "/giris/google/geri", "/static/logo.svg", "/static/favicon.svg"}
+ACIQ = {"/saglamliq", "/giris", "/giris/google", "/giris/google/geri", "/giris/kod", "/giris/mobil", "/qeydiyyat",
+        "/static/logo.svg", "/static/favicon.svg"}
+QEYD_KUKI = "wa_qeyd"  # telefonla ilk giriş: təsdiqlənmiş nömrə, qeydiyyat tamamlanana qədər
+G.MOBIL_MUMKUN = H.mobil_mumkun
 
 
 @app.middleware("http")
@@ -70,6 +74,11 @@ async def giris_yoxla(request: Request, call_next):
             if request.url.path.startswith("/api/"):
                 return JSONResponse({"detail": "Giriş tələb olunur", "giris": True}, status_code=401)
             return RedirectResponse("/giris", status_code=303)
+        if u and H.MECBURI and not H.tam_mi(u["l"]) and not request.url.path.startswith(("/qeydiyyat", "/cixis", "/static", "/giris")):
+            # qeydiyyat tamamlanmayıb (telefon və ya peşə yoxdur): sistem açılmır
+            if request.url.path.startswith("/api/"):
+                return JSONResponse({"detail": "Qeydiyyat tamamlanmayıb", "qeydiyyat": True}, status_code=403)
+            return RedirectResponse("/qeydiyyat", status_code=303)
         if u:
             _CARI.set(u["l"])
             request.state.istifadeci = u
@@ -119,6 +128,100 @@ def _daxil_et(request, u):
     r = RedirectResponse("/", status_code=303)
     r.set_cookie(G.KUKI, G.kuki_yarat(u), max_age=int(G.SESSIYA_SAAT * 3600), httponly=True,
                  samesite="lax", secure=_https(request), path="/")
+    return r
+
+
+# ---------------- mobil giriş və qeydiyyat ----------------
+@app.post("/giris/kod")
+def giris_kod(request: Request, tel: str = Form(""), kanal: str = Form("sms")):
+    """Telefon nömrəsinə SMS / WhatsApp təsdiq kodu (girişdə və qeydiyyatda)."""
+    acar = f"kod|{request.client.host if request.client else ''}"
+    if G.bloklanib(acar):
+        return {"ok": False, "metn": "Çox sayda sorğu. 10 dəqiqə sonra yenidən cəhd edin."}
+    n = H.kod_gonder(tel, kanal)
+    if not n["ok"]:
+        G.ugursuz(acar)
+    return n
+
+
+def _qeyd_kukisi(request):
+    import time as _t
+    d = G._imza_oxu(request.cookies.get(QEYD_KUKI))
+    return d if isinstance(d, dict) and d.get("exp", 0) > _t.time() and d.get("tel") else None
+
+
+@app.post("/giris/mobil")
+def giris_mobil(request: Request, tel: str = Form(""), kod: str = Form("")):
+    import time as _t
+    acar = f"mobil|{QB.telefon(tel)}|{request.client.host if request.client else ''}"
+    if G.bloklanib(acar):
+        return HTMLResponse(G.sehife("Çox sayda uğursuz cəhd. 10 dəqiqə sonra yenidən yoxlayın.", usul="mobil", tel=tel), status_code=429)
+    ok, xeta = H.kod_yoxla(tel, kod)
+    if not ok:
+        G.ugursuz(acar)
+        return HTMLResponse(G.sehife(xeta, usul="mobil", tel=tel), status_code=401)
+    G.ugurlu(acar)
+    h = H.tel_ile(tel)
+    if h:  # sistem istifadəçini nömrəsi ilə tanıyır (poçtun parolunu unutsa da öz hesabına girir)
+        return _daxil_et(request, {"login": h["login"], "ad": h.get("ad") or h["login"]})
+    r = RedirectResponse("/qeydiyyat", status_code=303)  # ilk dəfə: qeydiyyat
+    r.set_cookie(QEYD_KUKI, G._imzala({"tel": QB.telefon(tel), "exp": int(_t.time() + 1800)}), max_age=1800, httponly=True,
+                 samesite="lax", secure=_https(request), path="/")
+    return r
+
+
+def _qeyd_kim(request):
+    """Qeydiyyatı kim tamamlayır: daxil olmuş istifadəçi (telefonu/peşəsi yoxdur) və ya telefonla ilk dəfə gələn."""
+    u = G.kuki_oxu(request.cookies.get(G.KUKI))
+    if u:
+        h = H.al(u["l"]) or {}
+        return u["l"], h.get("ad") or (u.get("a") if u.get("a") != u["l"] else ""), h.get("tel", ""), bool(h.get("tel_tesdiq")), None
+    q = _qeyd_kukisi(request)
+    if q:
+        return q["tel"], H.ad_tap(tel=q["tel"]), q["tel"], True, q
+    return None
+
+
+@app.get("/qeydiyyat")
+def qeydiyyat(request: Request):
+    k = _qeyd_kim(request)
+    if not k:
+        return RedirectResponse("/giris", status_code=303)
+    login, ad, tel, tesdiqli, _ = k
+    prf = PR.al(login)
+    return HTMLResponse(H.qeydiyyat_sehifesi(ad=ad, tel=tel, tesdiqli=tesdiqli, secilmis=(prf or {}).get("peseler", []),
+                                             izah=None if ad else "Adınızı tapa bilmədim — ad və soyadınızı yazın."))
+
+
+@app.post("/qeydiyyat")
+def qeydiyyat_saxla(request: Request, ad: str = Form(""), tel: str = Form(""), kod: str = Form(""), peseler: list[str] = Form([])):
+    k = _qeyd_kim(request)
+    if not k:
+        return RedirectResponse("/giris", status_code=303)
+    login, _, kohne_tel, tesdiqli, q = k
+    ad, t = " ".join(ad.split()), QB.telefon(tel) or (QB.telefon(kohne_tel) if tesdiqli else "")
+
+    def xeta(m):
+        return HTMLResponse(H.qeydiyyat_sehifesi(m, ad=ad, tel=tel or kohne_tel, tesdiqli=tesdiqli, secilmis=peseler), status_code=400)
+    if len(ad) < 3:
+        return xeta("Ad soyadı yazın.")
+    if not t:
+        return xeta("Telefon nömrəsi məcburidir (məs.: 050 123 45 67).")
+    if not [p for p in peseler if p in PR.KODLAR]:
+        return xeta("Peşə məcburidir — siyahıdan ən azı birini seçin.")
+    tesdiq = tesdiqli and t == QB.telefon(kohne_tel)
+    if not tesdiq and kod:
+        ok, m = H.kod_yoxla(t, kod)
+        if not ok:
+            return xeta(m)
+        tesdiq = True
+    if not tesdiq and H.mobil_mumkun():
+        return xeta("Nömrəni təsdiqləyin: «Təsdiq kodu göndər», sonra gələn kodu yazın.")
+    H.saxla(login, ad, t, tesdiq)
+    PR.saxla(login, peseler)
+    TP.qeyd_et(login, ad)
+    r = _daxil_et(request, {"login": login, "ad": ad})
+    r.delete_cookie(QEYD_KUKI, path="/")
     return r
 
 

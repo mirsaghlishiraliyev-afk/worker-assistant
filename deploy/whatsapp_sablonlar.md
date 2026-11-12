@@ -62,6 +62,17 @@ Parametrlər: {{1}} tələbi yazan həkim(lər), {{2}} tələblər (nömrə, mə
 
 Rəhbərin nömrəsi: `WA_REHBER_TEL` və ya çatda «Rəhbərin telefonu 050 123 45 67». Təchizatçıların nömrələri stok faylının «Təchizatçının telefonu» sütunundan götürülür.
 
+## Giriş kodu (mobil giriş)
+
+### `giris_kodu` — təsdiq kodu
+
+Meta-da kateqoriya **Authentication** («Copy code» düyməli) şablon. Mətni Meta özü qurur
+(«{{1}} sizin təsdiq kodunuzdur…»); sistem kodu həm mətnə, həm düyməyə qoyur. Adı fərqlidirsə: `WA_KOD_SABLONU`.
+
+SMS üçün istənilən HTTP SMS xidməti: `WA_SMS_URL=https://.../send?to={tel}&text={metn}` (`WA_SMS_METOD=POST` olsa JSON
+`{"to", "text"}`, `WA_SMS_TOKEN` → `Authorization: Bearer`). Heç biri qurulmayıbsa, serverdə mobil giriş bağlıdır və
+qeydiyyatda nömrə təsdiqsiz yazılır; telefonda (APK) və ya `WA_KOD_TEST=1` ilə kod ekranda göstərilir (sınaq).
+
 ## Qoşulma
 
 1. Meta for Developers-də tətbiq yaradın, WhatsApp məhsulunu əlavə edin, klinikanın nömrəsini qoşun.

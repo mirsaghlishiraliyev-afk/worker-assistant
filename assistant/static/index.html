@@ -400,7 +400,9 @@ a.wa-link{background:linear-gradient(180deg,#25d366,#128c4a);border-color:#25d36
 const $ = s => document.querySelector(s);
 // giriş müddəti bitəndə (401) — giriş səhifəsinə
 const _fetch = window.fetch.bind(window);
-window.fetch = async (...a) => { const r = await _fetch(...a); if(r.status === 401) location.href = "/giris"; return r; };
+window.fetch = async (...a) => { const r = await _fetch(...a); if(r.status === 401) location.href = "/giris";
+  else if(r.status === 403 && r.headers.get("content-type")?.includes("json")){ try { if((await r.clone().json()).qeydiyyat) location.href = "/qeydiyyat"; } catch {} }
+  return r; };
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const ALET = {xulase:"Ümumi vəziyyət", istisnalar:"İstisnalar", baglantilar:"Bağlantılar", baglantini_tesdiqle:"Təsdiq",
   borclar:"Borclar", qaime_axtar:"Qaimə axtarışı", borc_mektubu:"Borc məktubu", hesabat_yarat:"Excel hesabatı",
@@ -523,7 +525,7 @@ function sideAlt(r){
   $("#faylBas").textContent = ad + (r.uzlasma ? " · " + r.dovr_sonu.split("-").reverse().join(".") : "");
 }
 // Server versiyası: kod yenilənib, server köhnə qalıbsa, bu yazı köhnə versiyanı göstərir
-const UI_VERSIYA = "1.19.0";
+const UI_VERSIYA = "1.20.0";
 function versiyaCiz(r){
   let el = $("#versiya");
   if(!el){ el = document.createElement("div"); el.id = "versiya"; $("#yan").appendChild(el); }

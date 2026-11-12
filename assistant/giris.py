@@ -437,7 +437,7 @@ def ugurlu(acar):
 
 
 # ---------------- giriş səhifəsi ----------------
-def _yerli_sehife(xeta, login, usul, secim):
+def _yerli_sehife(xeta, login, usul, secim, mobil=""):
     """Telefon rejimi: Outlook / Gmail seçimi, yalnız poçt ünvanı (parol yoxdur — server telefonun özündədir)."""
     from html import escape
 
@@ -451,21 +451,65 @@ def _yerli_sehife(xeta, login, usul, secim):
     bas, son = sehife(xeta, login, usul, _qabiq=True).split("<!--FORMLAR-->")
     return bas + secim + forma("outlook", "Şirkət poçtunuzu yazın — sizi tanımaq üçündür. Telefonda parol tələb olunmur: server "
                                          "telefonunuzun özündədir.", f"ad.soyad@{dom}") + \
-        forma("gmail", "Gmail ünvanınızı yazın — sizi tanımaq üçündür. Telefonda parol tələb olunmur.", "ad@gmail.com") + \
-        (f'<div class="xeta">{escape(xeta)}</div>' if xeta else "") + son
+        forma("gmail", "Gmail ünvanınızı yazın — sizi tanımaq üçündür. Telefonda parol tələb olunmur.", "ad@gmail.com") + mobil + \
+        (f'<div class="xeta">{escape(xeta)}</div>' if xeta else "") + (MOBIL_JS if mobil else "") + son
 
 
-def sehife(xeta="", login="", usul="", _qabiq=False):
-    """Giriş səhifəsi: Outlook (şirkət poçtu) və ya Gmail seçimi. Yalnız qurulmuş üsullar göstərilir."""
+# Mobil giriş: telefon nömrəsi + SMS / WhatsApp təsdiq kodu (assistant/hesab.py). app.py təyin edir: kod çatdırıla bilərmi.
+MOBIL_MUMKUN = lambda: False  # noqa: E731
+
+MOBIL_JS = """
+<script>
+(() => {
+  const f = document.getElementById("u-mobil"), dg = document.getElementById("kodGonder"); if(!f || !dg) return;
+  const info = document.getElementById("kodInfo");
+  dg.onclick = async () => {
+    const tel = f.tel.value.trim(); if(!tel){ f.tel.focus(); return; }
+    const kanal = (f.querySelector("input[name=kanal]:checked") || {}).value || "sms";
+    info.textContent = "Göndərilir…"; info.className = "info";
+    let j = {};
+    try { j = await (await fetch("/giris/kod", {method: "POST", body: new URLSearchParams({tel, kanal})})).json(); } catch { j = {metn: "Serverə qoşulmaq alınmadı"}; }
+    info.textContent = j.metn + (j.ekranda ? "  Kod: " + j.ekranda : ""); info.className = "info " + (j.ok ? "ok" : "no");
+    if(j.ok){ document.getElementById("kodHisse").hidden = false; f.kod.focus(); document.getElementById("kodGonder").textContent = "Kodu yenidən göndər"; }
+  };
+})();
+</script>"""
+
+
+def _mobil_forma(usul, tel=""):
     from html import escape
-    ol, gm = outlook_aktiv(), google_aktiv()
-    usul = usul if usul in ("outlook", "gmail") else ("outlook" if ol else "gmail")
-    secim = (f'''<div class="secim" role="tablist">
-<button type="button" role="tab" data-u="outlook" aria-selected="{str(usul == 'outlook').lower()}">Outlook</button>
-<button type="button" role="tab" lang="en" data-u="gmail" aria-selected="{str(usul == 'gmail').lower()}">Gmail</button></div>'''
-             if ol and gm else "")
+    return f'''<form class="usul" id="u-mobil" method="post" action="/giris/mobil"{'' if usul == 'mobil' else ' hidden'}>
+<p class="izah">Telefon nömrənizi yazın — təsdiq kodu SMS və ya WhatsApp ilə gələcək. Poçtun parolunu unutmusunuzsa da buradan girin:
+sistem sizi nömrənizlə tanıyır. İlk dəfədirsə, qısa qeydiyyat açılacaq.</p>
+<label for="tel">Telefon nömrəsi</label>
+<input id="tel" name="tel" type="tel" inputmode="tel" value="{escape(tel)}" placeholder="050 123 45 67" autocomplete="tel" required>
+<div class="kanal"><label><input type="radio" name="kanal" value="sms" checked> SMS</label>
+<label><input type="radio" name="kanal" value="whatsapp"> WhatsApp</label></div>
+<button type="button" id="kodGonder">Kod göndər</button>
+<div id="kodHisse" hidden><label for="kod">Təsdiq kodu</label>
+<input id="kod" name="kod" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 rəqəm">
+<button type="submit">Daxil ol</button></div>
+<div class="info" id="kodInfo"></div></form>'''
+
+
+def _secim(usul, ol, gm, mb):
+    usullar = [u for u, var in (("outlook", ol), ("gmail", gm), ("mobil", mb)) if var]
+    if len(usullar) < 2:
+        return ""
+    ad = {"outlook": "Outlook", "gmail": "Gmail", "mobil": "Mobil"}
+    return '<div class="secim" role="tablist" style="grid-template-columns:repeat(' + str(len(usullar)) + ',1fr)">' + "".join(
+        f'<button type="button" role="tab" lang="en" data-u="{u}" aria-selected="{str(usul == u).lower()}">{ad[u]}</button>'
+        for u in usullar) + "</div>"
+
+
+def sehife(xeta="", login="", usul="", _qabiq=False, tel=""):
+    """Giriş səhifəsi: Outlook (şirkət poçtu), Gmail və ya Mobil (telefon + kod). Yalnız işləyən üsullar göstərilir."""
+    from html import escape
+    ol, gm, mb = outlook_aktiv(), google_aktiv(), MOBIL_MUMKUN()
+    usul = usul if usul in ("outlook", "gmail", "mobil") else ("outlook" if ol else "gmail" if gm else "mobil")
+    secim = _secim(usul, ol, gm, mb)
     if YERLI and not _qabiq:  # telefon rejimi: hər iki üsulda yalnız ünvan (parolsuz)
-        return _yerli_sehife(xeta, login, usul, secim)
+        return _yerli_sehife(xeta, login, usul, secim, (_mobil_forma(usul, tel) if mb else ""))
     gmail = f'''<div class="usul" id="u-gmail"{'' if usul == 'gmail' else ' hidden'}>
 <p class="izah">Google hesabınızla daxil olun. Parolu Google-un öz səhifəsində yazırsınız — bu sistemə gəlmir.</p>
 <a class="google" href="/giris/google"><svg viewBox="0 0 48 48" width="18" height="18" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>Google ilə daxil ol</a>
@@ -497,6 +541,10 @@ button:hover{{background:#2a0808;box-shadow:0 0 12px rgba(255,40,40,.45)}}
 a.google{{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:8px;padding:11px;background:#fff;color:#1f1f1f;
 border-radius:2px;text-decoration:none;font-weight:600;font-size:14px}}
 a.google:hover{{box-shadow:0 0 12px rgba(255,255,255,.25)}}
+.kanal{{display:flex;gap:18px;margin:12px 0 0;color:var(--text)}}
+.kanal label{{display:flex;align-items:center;gap:6px;margin:0;font:inherit;letter-spacing:0;text-transform:none;color:var(--text)}}
+.kanal input{{width:auto;accent-color:var(--red)}}
+.info{{margin-top:12px;font-size:13px;color:var(--muted)}}.info.ok{{color:#3cff7a}}.info.no{{color:#ff8a80}}
 .xeta{{margin-top:14px;padding:9px 11px;border:1px solid #5a0a0a;background:#160303;color:#ff8a80;font-size:13px;border-radius:2px}}
 </style></head><body><div class="kart">
 <div class="bas"><img src="/static/logo.svg" alt=""><h1 lang="en">Worker's Assistant</h1></div>
@@ -511,8 +559,9 @@ a.google:hover{{box-shadow:0 0 12px rgba(255,255,255,.25)}}
 <button type="submit">Daxil ol</button>
 </form>''' if ol else ""}
 {"" if _qabiq else gmail}
+{"" if _qabiq or not mb else _mobil_forma(usul, tel)}
 {f'<div class="xeta">{escape(xeta)}</div>' if xeta and not _qabiq else ''}
-</div>
+</div>{MOBIL_JS if mb and not _qabiq else ""}
 <script>
 document.querySelectorAll(".secim button").forEach(b => b.onclick = () => {{
   document.querySelectorAll(".secim button").forEach(x => x.setAttribute("aria-selected", x === b));
