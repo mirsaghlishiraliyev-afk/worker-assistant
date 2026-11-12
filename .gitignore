@@ -11,3 +11,11 @@ hesabatlar/
 .env
 # Claude-un göndərdiyi ekran görüntüləri
 Claude outputs/
+# Android qurulması (APK GitHub Actions-da qurulur)
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+# qurulma zamanı kopyalanan ehtiyat versiya
+android/app/src/main/python/assistant/
+android/app/src/main/python/uzlasma/

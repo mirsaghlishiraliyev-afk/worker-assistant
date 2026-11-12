@@ -1,0 +1,9 @@
+// Worker's Assistant — Android: server telefonun özündə (Chaquopy ilə Python), interfeys WebView-da
+pluginManagement {
+    repositories { google(); mavenCentral(); gradlePluginPortal() }
+}
+dependencyResolutionManagement {
+    repositories { google(); mavenCentral() }
+}
+rootProject.name = "WorkerAssistant"
+include ":app"

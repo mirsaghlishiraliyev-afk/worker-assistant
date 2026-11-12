@@ -1,0 +1,10 @@
+# Telefondakı server üçün paketlər (Python 3.11, Chaquopy). Testlər bu versiyalarla da keçir.
+pandas
+openpyxl
+fastapi<0.100
+pydantic<2
+starlette<0.28
+uvicorn<0.30
+python-multipart
+ldap3
+httpx<0.28

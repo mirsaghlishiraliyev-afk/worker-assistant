@@ -1,0 +1,35 @@
+plugins {
+    id "com.android.application"
+    id "com.chaquo.python"
+}
+
+android {
+    namespace "az.asf.workerassistant"
+    compileSdk 34
+    defaultConfig {
+        applicationId "az.asf.workerassistant"
+        minSdk 24
+        targetSdk 34
+        // GitHub Actions-da: -PversionCode=<run nömrəsi> -PversionName=<proqramın versiyası>
+        versionCode (project.findProperty("versionCode") ?: "1") as int
+        versionName project.findProperty("versionName") ?: "dev"
+        ndk { abiFilters "arm64-v8a", "x86_64" }  // telefonlar və emulyator
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    buildTypes {
+        release { minifyEnabled false }
+    }
+}
+
+chaquopy {
+    defaultConfig {
+        version "3.11"
+        // FastAPI 0.99 + pydantic 1 (saf Python): Android-də Rust tələb edən pydantic-core lazım olmur
+        pip { install "-r", "requirements-android.txt" }
+        // statik fayllar (index.html, loqo) diskdə olmalıdır: paketlər APK-dan çıxarılır
+        extractPackages "assistant", "uzlasma"
+    }
+}
