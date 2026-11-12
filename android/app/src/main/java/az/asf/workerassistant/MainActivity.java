@@ -10,6 +10,7 @@ import android.os.Environment;
 import android.provider.MediaStore;
 import android.webkit.URLUtil;
 import android.webkit.ValueCallback;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -46,7 +47,18 @@ public class MainActivity extends Activity {
         ws.setJavaScriptEnabled(true);
         ws.setDomStorageEnabled(true);
         ws.setAllowFileAccess(false);
-        web.setWebViewClient(new WebViewClient());
+        web.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest req) {
+                return xariciAc(req.getUrl());
+            }
+
+            @Override
+            @SuppressWarnings("deprecation")
+            public boolean shouldOverrideUrlLoading(WebView v, String url) {
+                return xariciAc(Uri.parse(url));
+            }
+        });
         web.setWebChromeClient(new WebChromeClient() {
             @Override
             public boolean onShowFileChooser(WebView v, ValueCallback<Uri[]> cb, FileChooserParams p) {
@@ -81,6 +93,20 @@ public class MainActivity extends Activity {
                 runOnUiThread(() -> mesaj("Server qalxmadı", String.valueOf(t)));
             }
         }).start();
+    }
+
+    /** Telefonun öz serverindən kənar linklər (wa.me → WhatsApp, mailto:, xarici saytlar) uyğun tətbiqdə açılır. */
+    private boolean xariciAc(Uri u) {
+        String sxem = u.getScheme() == null ? "" : u.getScheme(), host = u.getHost() == null ? "" : u.getHost();
+        if ((sxem.equals("http") || sxem.equals("https")) && (host.equals("127.0.0.1") || host.equals("localhost"))) return false;
+        try {
+            Intent i = sxem.equals("intent") ? Intent.parseUri(u.toString(), Intent.URI_INTENT_SCHEME) : new Intent(Intent.ACTION_VIEW, u);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(i);
+        } catch (Exception e) {
+            Toast.makeText(this, sxem.startsWith("whatsapp") || host.contains("wa.me") ? "WhatsApp tapılmadı" : "Link açılmadı: " + u, Toast.LENGTH_LONG).show();
+        }
+        return true;  // tətbiqin içində açılmır
     }
 
     private static String menbe(String json) {

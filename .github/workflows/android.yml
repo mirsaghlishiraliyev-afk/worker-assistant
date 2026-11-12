@@ -44,6 +44,19 @@ jobs:
         id: v
         run: echo "ad=$(python -c "import re;print(re.search(r'__version__ = \"([^\"]+)\"', open('assistant/__init__.py').read()).group(1))")" >> "$GITHUB_OUTPUT"
 
+      - name: İmza açarı (secret varsa)
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          PAROL: ${{ secrets.ANDROID_KEYSTORE_PAROL }}
+        run: |
+          if [ -n "$KS" ]; then
+            echo "$KS" | base64 -d > "$RUNNER_TEMP/wa.keystore"
+            echo "WA_KEYSTORE=$RUNNER_TEMP/wa.keystore" >> "$GITHUB_ENV"
+            echo "WA_KEYSTORE_PAROL=$PAROL" >> "$GITHUB_ENV"
+          else
+            echo "::warning::ANDROID_KEYSTORE_B64 secret yoxdur — repodakı açıq açarla imzalanır (android/imza/wa.keystore)"
+          fi
+
       - name: APK
         run: gradle -p android assembleDebug --stacktrace -PversionCode=${{ github.run_number }} -PversionName=${{ steps.v.outputs.ad }}
 

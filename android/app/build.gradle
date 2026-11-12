@@ -19,8 +19,19 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+    // Sabit imza: hər qurulma eyni açarla imzalanır, ona görə yeni APK köhnənin üstünə quraşdırılır (məlumat itmir).
+    // GitHub secret ANDROID_KEYSTORE_B64 (+ ANDROID_KEYSTORE_PAROL) verilibsə o istifadə olunur, yoxsa repodakı açar.
+    signingConfigs {
+        sabit {
+            storeFile file(System.getenv("WA_KEYSTORE") ?: "../imza/wa.keystore")
+            storePassword System.getenv("WA_KEYSTORE_PAROL") ?: "workerassistant"
+            keyAlias System.getenv("WA_KEY_ALIAS") ?: "workerassistant"
+            keyPassword System.getenv("WA_KEYSTORE_PAROL") ?: "workerassistant"
+        }
+    }
     buildTypes {
-        release { minifyEnabled false }
+        debug { signingConfig signingConfigs.sabit }
+        release { minifyEnabled false; signingConfig signingConfigs.sabit }
     }
 }
 
