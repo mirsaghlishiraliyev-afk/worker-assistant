@@ -60,13 +60,21 @@ jobs:
       - name: APK
         run: gradle -p android assembleDebug --stacktrace -PversionCode=${{ github.run_number }} -PversionName=${{ steps.v.outputs.ad }}
 
-      - name: Adlandır
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk WorkerAssistant-${{ steps.v.outputs.ad }}.apk
+      - name: Adlandır (link həmişə eyni qalsın)
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk WorkerAssistant.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: WorkerAssistant-apk
-          path: WorkerAssistant-*.apk
+          path: WorkerAssistant.apk
+
+      - name: Köhnə APK-ları sil
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view android-latest --json assets -q '.assets[].name' 2>/dev/null | while read -r ad; do
+            gh release delete-asset android-latest "$ad" -y || true
+          done
 
       - name: «android-latest» buraxılışı
         uses: softprops/action-gh-release@v2
@@ -77,5 +85,5 @@ jobs:
             Telefonda öz serveri ilə işləyən Worker's Assistant. APK-nı yükləyin və quraşdırın («naməlum mənbə» icazəsi lazımdır).
             Tətbiq hər açılanda GitHub-dan main-in son versiyasını çəkir; internet yoxdursa, əvvəlki versiya ilə işləyir.
             Qurulub: ${{ steps.v.outputs.ad }} · commit ${{ github.sha }}
-          files: WorkerAssistant-*.apk
+          files: WorkerAssistant.apk
           make_latest: false
