@@ -692,3 +692,25 @@ def test_tesdiqlenmis_telebden_faylsiz_sifaris():
     c.post("/api/sohbet", json={"mesaj": f"{no} təsdiq"})
     r = c.post("/api/sohbet", json={"mesaj": "Təchizatçılara sifariş hazırla"}).json()
     assert "fayl lazımdır" not in r["cavab"] and r["hadiseler"][0]["ui"]["tip"] == "whatsapp"
+
+
+def test_telefon_rejimi_poct_unvani_sorusulur(monkeypatch):
+    """Android APK: server telefonda — giriş səhifəsi Outlook/Gmail seçimi ilə poçt ünvanını soruşur (parolsuz)."""
+    monkeypatch.setattr(G, "LDAP_URL", "")
+    monkeypatch.setattr(G, "IMAP_HOST", "")
+    monkeypatch.setattr(G, "GOOGLE_ID", "")
+    monkeypatch.setattr(G, "YERLI", True)
+    monkeypatch.setattr(G, "IMAP_DOMENLER", ["asf.gov.az"])
+    c = TestClient(app)
+    assert c.get("/", follow_redirects=False).headers["location"] == "/giris"     # ünvan soruşulmadan açılmır
+    t = c.get("/giris").text
+    assert 'data-u="outlook"' in t and 'data-u="gmail"' in t and 'name="parol"' not in t and "/giris/google" not in t
+    assert c.post("/giris", data={"login": "ad@gmail.com", "usul": "outlook"}).status_code == 400   # Gmail ünvanı Outlook-da
+    assert c.post("/giris", data={"login": "ad", "usul": "gmail"}).status_code == 400
+    r = c.post("/giris", data={"login": "aynur.memmedova", "usul": "outlook"}, follow_redirects=False)
+    assert r.status_code == 303 and G.KUKI in r.cookies                           # domen avtomatik əlavə olunur
+    v = c.get("/api/veziyyet").json()
+    assert v["istifadeci"] == {"ad": "Aynur Memmedova", "login": "aynur.memmedova@asf.gov.az"}
+    g = TestClient(app)
+    assert g.post("/giris", data={"login": "test.istifadeci@gmail.com", "usul": "gmail"}, follow_redirects=False).status_code == 303
+    assert c.get("/giris/google", follow_redirects=False).headers["location"] == "/giris"   # OAuth qurulmayıb

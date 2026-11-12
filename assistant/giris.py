@@ -85,21 +85,64 @@ IMAP_PIN = bool(IMAP_PINLER)
 GOOGLE_ID = _env("WA_GOOGLE_CLIENT_ID")
 GOOGLE_SECRET = _secret("/run/secrets/wa_google_secret", "WA_GOOGLE_CLIENT_SECRET")
 GOOGLE_REDIRECT = _env("WA_GOOGLE_REDIRECT")
-SESSIYA_SAAT = float(_env("WA_SESSIYA_SAAT", "8") or 8)
-ACAR = (_secret("/run/secrets/wa_sessiya_acari", "WA_SESSIYA_ACARI") or secrets.token_hex(32)).encode()
+# Telefon rejimi (Android APK): server yalnız telefonun özündə (127.0.0.1) açıqdır — kənardan heç kim qoşula bilmir.
+# Giriş parolsuzdur: poçt ünvanı (Outlook və ya Gmail) istifadəçini tanımaq üçün soruşulur və yadda qalır.
+# Android-də avtomatik (sys.getandroidapilevel), və ya WA_YERLI_GIRIS=1; söndürmək: WA_YERLI_GIRIS=0.
+import sys  # noqa: E402
+
+YERLI = _env("WA_YERLI_GIRIS") == "1" or (hasattr(sys, "getandroidapilevel") and _env("WA_YERLI_GIRIS") != "0")
+SESSIYA_SAAT = float(_env("WA_SESSIYA_SAAT", "8760" if YERLI else "8") or 8)  # telefonda: bir il
+
+
+def _acar():
+    a = _secret("/run/secrets/wa_sessiya_acari", "WA_SESSIYA_ACARI")
+    if a or not YERLI:
+        return a or secrets.token_hex(32)
+    fayl = pathlib.Path(_env("WA_DATA", "data")) / ".sessiya_acari"  # telefonda saxlanır: tətbiq yenidən açılanda giriş qalır
+    try:
+        a = fayl.read_text(encoding="utf-8").strip()
+    except OSError:
+        a = ""
+    if not a:
+        a = secrets.token_hex(32)
+        try:
+            fayl.parent.mkdir(parents=True, exist_ok=True)
+            fayl.write_text(a, encoding="utf-8")
+        except OSError:
+            pass
+    return a
+
+
+ACAR = _acar().encode()
 
 
 def aktiv():
-    """Giriş tələb olunurmu (poçt, domen serveri və ya Google təyin edilibsə)."""
-    return bool(IMAP_HOST or LDAP_URL or GOOGLE_ID)
+    """Giriş tələb olunurmu (poçt, domen serveri, Google və ya telefon rejimi təyin edilibsə)."""
+    return bool(IMAP_HOST or LDAP_URL or GOOGLE_ID or YERLI)
 
 
 def outlook_aktiv():
-    return bool(IMAP_HOST or LDAP_URL)
+    return bool(IMAP_HOST or LDAP_URL or YERLI)
 
 
 def google_aktiv():
-    return bool(GOOGLE_ID and GOOGLE_SECRET)
+    return bool(GOOGLE_ID and GOOGLE_SECRET) or YERLI
+
+
+def yerli_yoxla(login, usul="outlook"):
+    """Telefon rejimi: ünvan düzgün yazılıbsa istifadəçi; parol yoxlanmır. Səhv ünvan: GirisXetasi."""
+    adres = (login or "").strip().lower()
+    if usul == "outlook" and "@" not in adres and IMAP_DOMENLER:
+        adres = f"{adres}@{IMAP_DOMENLER[0]}"
+    if not re.fullmatch(r"[a-z0-9._%+\-]{1,64}@[a-z0-9.\-]+\.[a-z]{2,}", adres):
+        raise GirisXetasi("Poçt ünvanını tam yazın, məs.: ad.soyad@asf.gov.az və ya ad@gmail.com")
+    if usul == "gmail" and not adres.endswith(("@gmail.com", "@googlemail.com")):
+        raise GirisXetasi("Gmail ünvanı @gmail.com ilə bitməlidir.")
+    if usul == "outlook" and adres.endswith(("@gmail.com", "@googlemail.com")):
+        raise GirisXetasi("Bu Gmail ünvanıdır — yuxarıda «Gmail»i seçin.")
+    yerli = adres.split("@")[0]
+    ad = " ".join(h.capitalize() for h in re.split(r"[._\-]+", yerli) if h)
+    return {"login": adres, "ad": ad or adres, "mail": adres}
 
 
 def icazeli_siyahi():
@@ -394,7 +437,25 @@ def ugurlu(acar):
 
 
 # ---------------- giriş səhifəsi ----------------
-def sehife(xeta="", login="", usul=""):
+def _yerli_sehife(xeta, login, usul, secim):
+    """Telefon rejimi: Outlook / Gmail seçimi, yalnız poçt ünvanı (parol yoxdur — server telefonun özündədir)."""
+    from html import escape
+
+    def forma(u, izah, numune):
+        return (f'''<form class="usul" id="u-{u}" method="post" action="/giris"{'' if usul == u else ' hidden'}>
+<input type="hidden" name="usul" value="{u}"><p class="izah">{izah}</p>
+<label for="l-{u}">E-poçt ünvanı</label>
+<input id="l-{u}" name="login" type="email" inputmode="email" value="{escape(login) if usul == u else ''}" placeholder="{numune}" autocomplete="email" required>
+<button type="submit">Daxil ol</button></form>''')
+    dom = escape((IMAP_DOMENLER or [DOMEN or "asf.gov.az"])[0])
+    bas, son = sehife(xeta, login, usul, _qabiq=True).split("<!--FORMLAR-->")
+    return bas + secim + forma("outlook", "Şirkət poçtunuzu yazın — sizi tanımaq üçündür. Telefonda parol tələb olunmur: server "
+                                         "telefonunuzun özündədir.", f"ad.soyad@{dom}") + \
+        forma("gmail", "Gmail ünvanınızı yazın — sizi tanımaq üçündür. Telefonda parol tələb olunmur.", "ad@gmail.com") + \
+        (f'<div class="xeta">{escape(xeta)}</div>' if xeta else "") + son
+
+
+def sehife(xeta="", login="", usul="", _qabiq=False):
     """Giriş səhifəsi: Outlook (şirkət poçtu) və ya Gmail seçimi. Yalnız qurulmuş üsullar göstərilir."""
     from html import escape
     ol, gm = outlook_aktiv(), google_aktiv()
@@ -403,6 +464,8 @@ def sehife(xeta="", login="", usul=""):
 <button type="button" role="tab" data-u="outlook" aria-selected="{str(usul == 'outlook').lower()}">Outlook</button>
 <button type="button" role="tab" lang="en" data-u="gmail" aria-selected="{str(usul == 'gmail').lower()}">Gmail</button></div>'''
              if ol and gm else "")
+    if YERLI and not _qabiq:  # telefon rejimi: hər iki üsulda yalnız ünvan (parolsuz)
+        return _yerli_sehife(xeta, login, usul, secim)
     gmail = f'''<div class="usul" id="u-gmail"{'' if usul == 'gmail' else ' hidden'}>
 <p class="izah">Google hesabınızla daxil olun. Parolu Google-un öz səhifəsində yazırsınız — bu sistemə gəlmir.</p>
 <a class="google" href="/giris/google"><svg viewBox="0 0 48 48" width="18" height="18" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>Google ilə daxil ol</a>
@@ -438,8 +501,8 @@ a.google:hover{{box-shadow:0 0 12px rgba(255,255,255,.25)}}
 </style></head><body><div class="kart">
 <div class="bas"><img src="/static/logo.svg" alt=""><h1 lang="en">Worker's Assistant</h1></div>
 <div class="skaner"></div>
-{secim}
-{f'''<form class="usul" id="u-outlook" method="post" action="/giris" autocomplete="on"{'' if usul == 'outlook' else ' hidden'}>
+{"<!--FORMLAR-->" if _qabiq else secim}
+{"" if _qabiq else f'''<form class="usul" id="u-outlook" method="post" action="/giris" autocomplete="on"{'' if usul == 'outlook' else ' hidden'}>
 <p class="izah">Şirkət e-poçtunuzla daxil olun — Outlook-a yazdığınız ünvan və parol.</p>
 <label for="l">E-poçt ünvanı</label>
 <input id="l" name="login" value="{escape(login)}" placeholder="ad.soyad@{escape((IMAP_DOMENLER or [DOMEN or 'asf.gov.az'])[0])}" autocomplete="username" required>
@@ -447,8 +510,8 @@ a.google:hover{{box-shadow:0 0 12px rgba(255,255,255,.25)}}
 <input id="p" name="parol" type="password" autocomplete="current-password" required>
 <button type="submit">Daxil ol</button>
 </form>''' if ol else ""}
-{gmail}
-{f'<div class="xeta">{escape(xeta)}</div>' if xeta else ''}
+{"" if _qabiq else gmail}
+{f'<div class="xeta">{escape(xeta)}</div>' if xeta and not _qabiq else ''}
 </div>
 <script>
 document.querySelectorAll(".secim button").forEach(b => b.onclick = () => {{

@@ -91,9 +91,14 @@ def giris_sehifesi(request: Request):
 
 
 @app.post("/giris")
-def giris_et(request: Request, login: str = Form(""), parol: str = Form("")):
+def giris_et(request: Request, login: str = Form(""), parol: str = Form(""), usul: str = Form("outlook")):
     if not G.aktiv():
         return RedirectResponse("/", status_code=303)
+    if G.YERLI:  # telefon rejimi: parolsuz, ünvan istifadəçini tanımaq üçündür
+        try:
+            return _daxil_et(request, G.yerli_yoxla(login, usul if usul in ("outlook", "gmail") else "outlook"))
+        except G.GirisXetasi as x:
+            return HTMLResponse(G.sehife(str(x), login, usul), status_code=400)
     acar = f"{(login or '').strip().lower()}|{request.client.host if request.client else ''}"
     if G.bloklanib(acar):
         return HTMLResponse(G.sehife("Çox sayda uğursuz cəhd. 10 dəqiqə sonra yenidən yoxlayın.", login), status_code=429)
@@ -127,7 +132,7 @@ def _google_geri_unvan(request):
 @app.get("/giris/google")
 def google_giris(request: Request):
     """Gmail: Google-un giriş səhifəsinə yönləndirir (parol bu sistemə gəlmir)."""
-    if not G.google_aktiv():
+    if not (G.GOOGLE_ID and G.GOOGLE_SECRET):  # telefon rejimində Gmail — formla, OAuth yox
         return RedirectResponse("/giris", status_code=303)
     url, kuki = G.google_basla(_google_geri_unvan(request))
     r = RedirectResponse(url, status_code=303)
@@ -137,7 +142,7 @@ def google_giris(request: Request):
 
 @app.get("/giris/google/geri")
 def google_geri(request: Request, code: str = "", state: str = "", error: str = ""):
-    if not G.google_aktiv():
+    if not (G.GOOGLE_ID and G.GOOGLE_SECRET):  # telefon rejimində Gmail — formla, OAuth yox
         return RedirectResponse("/giris", status_code=303)
 
     def xeta(m, kod=400):
