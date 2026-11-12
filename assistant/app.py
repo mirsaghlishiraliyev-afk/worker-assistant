@@ -20,6 +20,7 @@ from . import kitabxana as KB
 from . import teklif as TK
 from .modullar import bank as BANK
 from .modullar import qebul as QB
+from .modullar import stok as STOK
 from .modullar import tapsiriq as TP
 from .modullar import teleb as TELEB
 from . import tools as T
@@ -411,6 +412,8 @@ def sohbet(m: Mesaj):
         cavab = "Peşənizə görə istifadə təlimatı:" if t else "Əvvəlcə peşənizi seçin — yan paneldə «Peşələrim»."
         return {"cavab": cavab, "hadiseler": [{"alet": "telimat", "args": {}, "ui": t}] if t else []}
     plan = TP.qayda(S, m.mesaj) or TELEB.qayda(S, m.mesaj)  # tapşırıqlar, sorğular, stoka tələb: fayl lazım deyil
+    if not plan and not S.fayl_var:  # təsdiqlənmiş tələblər üzrə sifariş: stok faylı olmadan da
+        plan = STOK.qayda(S, m.mesaj)
     if plan:
         netice = T.cagir(S, plan[0], plan[1])
         S.tarixce += [{"role": "user", "content": m.mesaj}, {"role": "assistant", "content": netice["metn"]}]

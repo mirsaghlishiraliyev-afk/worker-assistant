@@ -679,3 +679,16 @@ def test_cixaris_sablon_ve_muqavile_birlikde():
     sohbet("Şablonu doldur")
     r = sohbet("İnteqrasiyaya bütün daxilolmalar")
     assert r["cavab"].startswith("Müqavilə 1/2: 9-ci sətir") and "uyğundur" in r["cavab"]   # qaytarılma, təlim — müqaviləsiz
+
+
+def test_tesdiqlenmis_telebden_faylsiz_sifaris():
+    """Telefondakı ssenari: fayl yüklənməyib, «Təchizatçılara sifariş hazırla» — «fayl lazımdır» demir."""
+    _qur()
+    c = TestClient(app)
+    _gir(c, "resad", "Parol2")
+    c.put("/api/profil", json={"peseler": ["klinika_rehber"]})
+    r = c.post("/api/sohbet", json={"mesaj": "Stoka tələb: Tibbi maska 5 qutu"}).json()
+    no = r["cavab"].split("Tələb ")[1].split(" ")[0]
+    c.post("/api/sohbet", json={"mesaj": f"{no} təsdiq"})
+    r = c.post("/api/sohbet", json={"mesaj": "Təchizatçılara sifariş hazırla"}).json()
+    assert "fayl lazımdır" not in r["cavab"] and r["hadiseler"][0]["ui"]["tip"] == "whatsapp"

@@ -126,7 +126,37 @@ def stok(s):
         out.append({"setir": int(x["_setir"]), "mehsul": mehsul, "vahid": str(al("vahid") or "").strip(),
                     "qaliq": qaliq, "minimum": mn, "veziyyet": veziyyet, "sifaris": sif,
                     "techizatci": str(al("techizatci") or "").strip(), "tel": QB.telefon(al("tel"))})
+    _techizatcilari_yadda_saxla(out)
     return {"vereq": ad, "mehsullar": out}
+
+
+# Stok faylı yüklənəndə məhsul → təchizatçı (və telefonu) yadda saxlanır: stok faylı açıq olmayanda da
+# həkimlərin təsdiqlənmiş tələbləri üzrə sifariş hazırlamaq olsun
+def _techizatci_fayli():
+    return pathlib.Path(TELEB.QOVLUQ or ".") / "techizatcilar.json"
+
+
+def _techizatcilari_yadda_saxla(mehsullar):
+    yeni = {norm(m["mehsul"]).strip(): {"mehsul": m["mehsul"], "techizatci": m["techizatci"], "tel": m["tel"], "vahid": m["vahid"]}
+            for m in mehsullar if m.get("techizatci")}
+    if not yeni:
+        return
+    try:
+        d = json.loads(_techizatci_fayli().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        d = {}
+    if any(d.get(k) != v for k, v in yeni.items()):
+        d.update(yeni)
+        _techizatci_fayli().parent.mkdir(parents=True, exist_ok=True)
+        _techizatci_fayli().write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def _yaddasdaki_mehsullar():
+    try:
+        d = json.loads(_techizatci_fayli().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return [dict(v, qaliq=None, minimum=None, veziyyet="", sifaris=None) for v in d.values()]
 
 
 def _yoxdur(s):
@@ -230,8 +260,11 @@ def stok_rehbere(s, gonder=False):
 def stok_sifaris(s, gonder=False, techizatci=None):
     """Azalan məhsullar üzrə təchizatçılara (hər birinə öz məhsulları ilə) WhatsApp sifariş mesajı."""
     d = stok(s)
-    if not d:
-        return _yoxdur(s)
+    faylsiz = d is None  # stok faylı açıq deyil: yalnız təsdiqlənmiş tələblər (təchizatçı yaddaşdan)
+    if faylsiz:
+        if not TELEB.tesdiqlenmis():
+            return {"metn": "Təsdiqlənmiş stok tələbi yoxdur. Azalan məhsullar üzrə sifariş üçün stok faylını 📎 ilə yükləyin.", "ui": None}
+        d = {"mehsullar": _yaddasdaki_mehsullar()}
     az = [dict(m, telebler=[]) for m in _azalanlar(d)]
     # həkimlərin təsdiqlənmiş tələbləri: stokdakı məhsulla tutuşdurulur (təchizatçı ondan), miqdar böyüyü götürülür
     uygunsuz = []
@@ -269,7 +302,12 @@ def stok_sifaris(s, gonder=False, techizatci=None):
     tno = sorted({no for x in kart_telebleri for no in x})
     if tno:
         n["metn"] += f" Həkimlərin təsdiqlənmiş tələbləri də daxildir: {', '.join(tno)}."
-    telsiz = [k["ad"] for k in kartlar if not k["tel"]]
+    if faylsiz:
+        n["metn"] = "Stok faylı açıq deyil — sifariş həkimlərin təsdiqlənmiş tələblərindən hazırlandı. " + n["metn"]
+        if uygunsuz:
+            n["metn"] += (" Təchizatçısı bilinməyən məhsullar var: təchizatçılar stok faylından yadda qalır — stok faylını bir dəfə "
+                          "yükləsəniz, sonrakı sifarişlərdə avtomatik tapılacaq.")
+    telsiz = [k["ad"] for k in kartlar if not k["tel"] and k["ad"] != "Təchizatçı göstərilməyib"]
     if telsiz:
         n["metn"] += f" Telefonu olmayan: {', '.join(telsiz)} — stok faylında «Təchizatçının telefonu» sütununa yazın."
     return n
@@ -290,7 +328,11 @@ def qayda(s, mesaj):
     m = re.search(r"rehber\w*\s+(?:telefonu|nomresi)\s+([+\d][\d\s\-()]{7,})$", n)
     if m:
         return "rehber_telefonu", {"telefon_nomresi": m.group(1)}
-    if not re.search(r"stok|anbar|azalan|biten|bitib|sifaris|techizatci|rehber", n) or not _vereq(s)[1]:
+    if not re.search(r"stok|anbar|azalan|biten|bitib|sifaris|techizatci|rehber", n):
+        return None
+    if not _vereq(s)[1]:  # stok faylı yoxdur: yalnız təsdiqlənmiş tələblər üzrə sifariş mümkündür
+        if re.search(r"sifaris|techizatci", n) and not re.search(r"gonderme|legv", n):
+            return "stok_sifaris", {"gonder": bool(re.search(r"\bgonder\b|gonderin", n))}
         return None
     if re.search(r"gonderme|legv", n):
         return "stok_veziyyeti", {}

@@ -136,3 +136,25 @@ def test_gonderilen_sifarisin_telebleri_isarelenir(monkeypatch):
     TELEB.stok_teleb_qerar(s, "T-001", "təsdiq")
     ST.stok_sifaris(s, gonder=True)
     assert TELEB.hamisi()[0]["status"] == "sifaris"
+
+
+def test_stok_fayli_olmadan_tesdiqlenmis_telebler():
+    """Rəhbər tələbi təsdiq edib, stok faylı açıq deyil: sifariş tələblərdən hazırlanır, təchizatçı yaddaşdan."""
+    class Bos:
+        excel = None
+    bos = Bos()
+    assert "Təsdiqlənmiş stok tələbi yoxdur" in ST.stok_sifaris(bos)["metn"]
+    TELEB.stok_teleb_yaz(bos, "Kompozit plomb", 7, "ədəd")
+    TELEB.stok_teleb_yaz(bos, "Rentgen plyonkası", 50, "ədəd")
+    TELEB.stok_teleb_qerar(bos, "hamisi", "təsdiq")
+    plan = ST.qayda(bos, "Təchizatçılara sifariş hazırla")                     # fayl yoxdur, yenə də başa düşülür
+    assert plan == ("stok_sifaris", {"gonder": False})
+    n = ST.stok_sifaris(bos, **plan[1])                                        # təchizatçı hələ bilinmir
+    assert n["metn"].startswith("Stok faylı açıq deyil") and "stok faylını bir dəfə yükləsəniz" in n["metn"]
+    assert [k["ad"] for k in n["ui"]["kartlar"]] == ["Təchizatçı göstərilməyib"]
+    ST.stok(S())                                                               # stok faylı bir dəfə yükləndi — yadda qaldı
+    n = ST.stok_sifaris(bos)
+    k = {x["ad"]: x for x in n["ui"]["kartlar"]}
+    assert "Kompozit plomb materialı (A2) — 7 ədəd" in k["DentalMed MMC"]["metn"]
+    assert k["DentalMed MMC"]["link"].startswith("https://wa.me/994501112233")
+    assert "Rentgen plyonkası — 50 ədəd" in k["Təchizatçı göstərilməyib"]["metn"]
