@@ -18,7 +18,8 @@ from .excel import norm
 
 QOVLUQ = None  # state.py təyin edir: WA_DATA/stok
 _KILID = threading.Lock()
-STATUSLAR = {"gozleyir": "gözləyir", "tesdiq": "təsdiqləndi", "redd": "rədd edildi", "sifaris": "sifariş edildi", "legv": "ləğv edildi"}
+STATUSLAR = {"gozleyir": "gözləyir", "tesdiq": "təsdiqləndi", "redd": "rədd edildi", "sifaris": "sifariş edildi", "legv": "ləğv edildi",
+             "silindi": "silindi"}
 VAHIDLER = r"ədəd|eded|ampul|qutu|dəst|dest|paket|şüşə|şuşə|tübik|tubik|ml|qram|qr|kq|litr|rulon|cüt|cut|flakon|şpris|spris|karpula|vərəq"
 
 SABLONLAR = {
@@ -138,12 +139,12 @@ def stok_teleb_yaz(s, mehsul, miqdar=None, vahid="", tecili=False, qeyd=""):
 def stok_telebleri(s, status=None):
     rehber = rehberdir(s)
     login, _ = _kim(s)
-    ts = hamisi() if rehber else [t for t in hamisi() if t["login"] == login]
+    ts = [t for t in hamisi() if t["status"] != "silindi" and (rehber or t["login"] == login)]  # silinənlər görünmür
     if status:
         ts = [t for t in ts if t["status"] == status]
     if not ts:
         return {"metn": "Stok tələbi yoxdur." + ("" if rehber else " Yazmaq üçün: «Stoka tələb: <məhsul> — <miqdar>»."), "ui": None}
-    sira = {"gozleyir": 0, "tesdiq": 1, "sifaris": 2, "redd": 3, "legv": 4}
+    sira = {"gozleyir": 0, "tesdiq": 1, "sifaris": 2, "redd": 3, "legv": 4, "silindi": 5}
     ts = sorted(ts, key=lambda t: (sira[t["status"]], not t.get("tecili"), t["vaxt"]))
     setirler = [[t["no"], t["mehsul"], _miqdar(t), "təcili" if t.get("tecili") else "", STATUSLAR[t["status"]], t["kim"],
                  f"{t['vaxt'][8:10]}.{t['vaxt'][5:7]} {t['vaxt'][11:16]}"] for t in ts]  # telefonda vacib sütunlar əvvəl
@@ -166,15 +167,16 @@ def stok_telebleri(s, status=None):
 def stok_teleb_qerar(s, nomre, qerar):
     """Rəhbərin qərarı: tesdiq / redd / sifaris (sifariş edildi kimi işarələ). nomre='hamisi' — gözləyənlərin hamısı."""
     q = {"tesdiq": "tesdiq", "təsdiq": "tesdiq", "redd": "redd", "rədd": "redd", "sifaris": "sifaris", "legv": "legv",
-         "ləğv": "legv"}.get(norm(qerar).strip(), None)
-    if q == "legv":  # tələbi yazan özü (və ya rəhbər) gözləyən tələbi ləğv edir — məs. səhvən yazılıb
+         "ləğv": "legv", "sil": "silindi", "silindi": "silindi"}.get(norm(qerar).strip(), None)
+    if q in ("legv", "silindi"):  # tələbi yazan özü (və ya rəhbər) gözləyən tələbi ləğv edir / silir — məs. səhvən yazılıb
         login, _ = _kim(s)
         hedef = [t["no"] for t in hamisi() if t["no"] in _nomreler(nomre) and t["status"] == "gozleyir"
                  and (rehberdir(s) or t["login"] == login)]
         if not hedef:
-            return {"metn": f"«{nomre}»: ləğv ediləcək gözləyən tələb tapılmadı (yalnız öz tələbinizi ləğv edə bilərsiniz).", "ui": None}
-        status_deyis(set(hedef), "legv")
-        return {"metn": f"Oldu: {', '.join(hedef)} — ləğv edildi.", "ui": None}
+            return {"metn": f"«{nomre}»: {'silinəcək' if q == 'silindi' else 'ləğv ediləcək'} gözləyən tələb tapılmadı "
+                            f"(yalnız öz tələbinizi {'silə' if q == 'silindi' else 'ləğv edə'} bilərsiniz).", "ui": None}
+        status_deyis(set(hedef), q)  # silinən siyahılarda görünmür, nömrəsi isə təkrarlanmır
+        return {"metn": f"Oldu: {', '.join(hedef)} — {STATUSLAR[q]}.", "ui": None}
     if not rehberdir(s):
         return {"metn": "Tələbi yalnız klinika rəhbəri təsdiq və ya rədd edə bilər.", "ui": None}
     if not q:
@@ -243,7 +245,7 @@ def qayda(s, mesaj):
 def _qayda(s, mesaj):
     n = norm(mesaj)
     nomreler = ",".join(dict.fromkeys(_no(x) for x in re.findall(r"\bt-?\d{1,4}\b", n)))  # bir neçə: «T-001, T-002»
-    m = re.search(r"\bt-?\d{1,4}\b.*\b(tesdiq|redd|sifaris edildi|legv)\b", n)
+    m = re.search(r"\bt-?\d{1,4}\b.*\b(tesdiq|redd|sifaris edildi|legv|sil)\b", n)
     if m:
         return "stok_teleb_qerar", {"nomre": nomreler, "qerar": "sifaris" if "sifaris" in m.group(1) else m.group(1)}
     if re.search(r"butun telebleri (tesdiq|redd)", n):

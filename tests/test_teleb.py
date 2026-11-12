@@ -139,3 +139,16 @@ def test_oz_telebini_legv_edir(monkeypatch):
     assert plan == ("stok_teleb_qerar", {"nomre": "T-001", "qerar": "legv"})
     assert TELEB.stok_teleb_qerar(hekim, **plan[1])["metn"] == "Oldu: T-001 — ləğv edildi."
     assert TELEB.stok_telebleri(hekim)["ui"]["setirler"][0][4] == "ləğv edildi"
+
+
+def test_oz_telebini_silir(monkeypatch):
+    s = S()
+    s.istifadeci_login, s.istifadeci_adi = "gunel", "Günel"
+    monkeypatch.setattr(TELEB, "rehberdir", lambda x: False)
+    TELEB.stok_teleb_yaz(s, "Əlcək", 5, "paket")
+    TELEB.stok_teleb_yaz(s, "T-001 və T-002 ni rəhbərə göndər", None)            # səhvən yazılmış tələb
+    plan = TELEB.qayda(s, "T-002 sil")
+    assert plan == ("stok_teleb_qerar", {"nomre": "T-002", "qerar": "sil"})
+    assert TELEB.stok_teleb_qerar(s, **plan[1])["metn"] == "Oldu: T-002 — silindi."
+    assert [x[0] for x in TELEB.stok_telebleri(s)["ui"]["setirler"]] == ["T-001"]   # siyahıda görünmür
+    assert TELEB.stok_teleb_yaz(s, "Maska", 1, "qutu")["metn"].startswith("Tələb T-003")   # nömrə təkrarlanmır
