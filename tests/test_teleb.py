@@ -112,3 +112,30 @@ def test_bir_nece_teleb_birlikde():
     TELEB.stok_teleb_qerar(s, **plan[1])
     assert [t["status"] for t in TELEB.hamisi()] == ["tesdiq", "tesdiq", "gozleyir"]
     assert TELEB.qayda(s, "t3 rədd")[1]["nomre"] == "T-003"
+
+
+def test_gozleme_rejiminde_emr_teleb_sayilmir():
+    """«Stoka tələb yaz» düyməsindən sonra «T-001 və T-002 ni rəhbərə göndər» yeni tələb kimi yazılmamalıdır."""
+    s = S()
+    TELEB.stok_teleb_yaz(s, "Əlcək", 5, "paket")
+    TELEB.stok_teleb_yaz(s, "Ağrı kəsici", 2, "qutu")
+    TELEB.stok_teleb_yaz(s, "")                                                    # «Nə lazımdır?» — cavab gözlənilir
+    assert s.teleb_gozle
+    plan = TELEB.qayda(s, "T-001 və T-002 ni rəhbərə göndər")
+    assert plan == ("stok_teleb_rehbere", {"nomre": "T-001,T-002", "gonder": True})
+    assert not s.teleb_gozle                                                       # gözləmə bitdi
+    assert TELEB.qayda(s, "Maska 3 qutu") is None                                  # artıq tələb kimi tutulmur
+    assert len(TELEB.hamisi()) == 2
+
+
+def test_oz_telebini_legv_edir(monkeypatch):
+    hekim, yad = S(), S()
+    hekim.istifadeci_login, hekim.istifadeci_adi = "gunel", "Günel"
+    yad.istifadeci_login, yad.istifadeci_adi = "aynur", "Aynur"
+    monkeypatch.setattr(TELEB, "rehberdir", lambda s: False)
+    TELEB.stok_teleb_yaz(hekim, "Səhv yazılmış", None)
+    assert "tapılmadı" in TELEB.stok_teleb_qerar(yad, "T-001", "legv")["metn"]     # başqasının tələbini ləğv edə bilmir
+    plan = TELEB.qayda(hekim, "T-001 ləğv et")
+    assert plan == ("stok_teleb_qerar", {"nomre": "T-001", "qerar": "legv"})
+    assert TELEB.stok_teleb_qerar(hekim, **plan[1])["metn"] == "Oldu: T-001 — ləğv edildi."
+    assert TELEB.stok_telebleri(hekim)["ui"]["setirler"][0][4] == "ləğv edildi"
