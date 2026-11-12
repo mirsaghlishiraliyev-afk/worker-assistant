@@ -174,7 +174,8 @@ def stok_teleb_qerar(s, nomre, qerar):
     if str(nomre).lower() in ("hamisi", "hamısı", "*"):
         hedef = [t["no"] for t in ts if t["status"] == "gozleyir"]
     else:
-        hedef = [t["no"] for t in ts if t["no"].lower() == str(nomre).strip().lower()]
+        istenen = _nomreler(nomre)
+        hedef = [t["no"] for t in ts if t["no"] in istenen]
     if not hedef:
         return {"metn": f"«{nomre}» tələbi tapılmadı.", "ui": None}
     status_deyis(set(hedef), q)
@@ -192,7 +193,8 @@ def stok_teleb_rehbere(s, nomre=None, gonder=False):
     """Həkimin tələbini (və ya bütün gözləyənləri) WhatsApp ilə klinika rəhbərinə bildirir."""
     from .stok import _kart, _netice, rehber_tel
     login, ad = _kim(s)
-    ts = [t for t in hamisi() if t["status"] == "gozleyir" and (not nomre or t["no"].lower() == str(nomre).lower())
+    istenen = _nomreler(nomre)
+    ts = [t for t in hamisi() if t["status"] == "gozleyir" and (not istenen or t["no"] in istenen)
           and (rehberdir(s) or t["login"] == login)]
     if not ts:
         return {"metn": "Bildiriləcək gözləyən tələb yoxdur.", "ui": None}
@@ -209,6 +211,14 @@ def stok_teleb_rehbere(s, nomre=None, gonder=False):
 
 
 # ======================= lokal (AI-sız) rejim =======================
+def _nomreler(nomre):
+    """«T-001,T-002», «t1 t2», ["T-001"] -> {"T-001", "T-002"}; boş -> set()."""
+    if not nomre:
+        return set()
+    m = nomre if isinstance(nomre, (list, tuple)) else re.findall(r"t\s*-?\s*\d{1,4}", str(nomre), re.I)
+    return {_no(x) for x in m}
+
+
 def _no(x):
     return "T-" + x.upper().replace("-", "")[1:].zfill(3)
 
@@ -216,14 +226,15 @@ def _no(x):
 def qayda(s, mesaj):
     """Fayldan asılı deyil: tələb yazmaq, siyahı, qərar, rəhbərə bildiriş."""
     n = norm(mesaj)
-    m = re.search(r"\b(t-?\d{1,4})\b.*\b(tesdiq|redd|sifaris edildi)\b", n)
+    nomreler = ",".join(dict.fromkeys(_no(x) for x in re.findall(r"\bt-?\d{1,4}\b", n)))  # bir neçə: «T-001, T-002»
+    m = re.search(r"\bt-?\d{1,4}\b.*\b(tesdiq|redd|sifaris edildi)\b", n)
     if m:
-        return "stok_teleb_qerar", {"nomre": _no(m.group(1)), "qerar": "sifaris" if "sifaris" in m.group(2) else m.group(2)}
+        return "stok_teleb_qerar", {"nomre": nomreler, "qerar": "sifaris" if "sifaris" in m.group(1) else m.group(1)}
     if re.search(r"butun telebleri (tesdiq|redd)", n):
         return "stok_teleb_qerar", {"nomre": "hamisi", "qerar": "redd" if "redd" in n else "tesdiq"}
-    m = re.search(r"\b(t-?\d{1,4})\b.*rehber", n)
+    m = re.search(r"\bt-?\d{1,4}\b.*rehber", n)
     if m and "teleb" in n:
-        return "stok_teleb_rehbere", {"nomre": _no(m.group(1)),
+        return "stok_teleb_rehbere", {"nomre": nomreler,
                                       "gonder": bool(re.search(r"\bgonder\b", n))}
     if re.search(r"telebi rehbere (gonder|bildir)", n):
         return "stok_teleb_rehbere", {"gonder": "gonder" in n}

@@ -93,3 +93,22 @@ def test_sablon_senedde():
     doc = (pathlib.Path(__file__).resolve().parents[1] / "deploy" / "whatsapp_sablonlar.md").read_text(encoding="utf-8")
     for ad, s in TELEB.SABLONLAR.items():
         assert ad in doc and s["metn"] in doc, ad
+
+
+def test_bir_nece_teleb_birlikde():
+    """«T-001,T-002 tələbini rəhbərə bildir» — hər iki tələb bir mesajda; «T-001, T-002 təsdiq» — hər ikisi."""
+    from assistant.modullar import stok as ST
+    s = S()
+    TELEB.stok_teleb_yaz(s, "Əlcək", 5, "paket", tecili=True)
+    TELEB.stok_teleb_yaz(s, "Ağrı kəsici", 2, "qutu")
+    TELEB.stok_teleb_yaz(s, "Maska", 1, "qutu")
+    ST.rehber_telefonu(s, "055 274 22 67")
+    plan = TELEB.qayda(s, "T-001,T-002 tələbini rəhbərə bildir")
+    assert plan == ("stok_teleb_rehbere", {"nomre": "T-001,T-002", "gonder": False})
+    k = TELEB.stok_teleb_rehbere(s, **plan[1])["ui"]["kartlar"]
+    assert len(k) == 1 and "T-001 Əlcək — 5 paket (təcili); T-002 Ağrı kəsici — 2 qutu" in k[0]["metn"] and "T-003" not in k[0]["metn"]
+    plan = TELEB.qayda(s, "T-001, T-002 təsdiq")
+    assert plan == ("stok_teleb_qerar", {"nomre": "T-001,T-002", "qerar": "tesdiq"})
+    TELEB.stok_teleb_qerar(s, **plan[1])
+    assert [t["status"] for t in TELEB.hamisi()] == ["tesdiq", "tesdiq", "gozleyir"]
+    assert TELEB.qayda(s, "t3 rədd")[1]["nomre"] == "T-003"
