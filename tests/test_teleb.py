@@ -152,3 +152,15 @@ def test_oz_telebini_silir(monkeypatch):
     assert TELEB.stok_teleb_qerar(s, **plan[1])["metn"] == "Oldu: T-002 — silindi."
     assert [x[0] for x in TELEB.stok_telebleri(s)["ui"]["setirler"]] == ["T-001"]   # siyahıda görünmür
     assert TELEB.stok_teleb_yaz(s, "Maska", 1, "qutu")["metn"].startswith("Tələb T-003")   # nömrə təkrarlanmır
+
+
+def test_legv_edilmisi_silmek(monkeypatch):
+    s = S()
+    s.istifadeci_login, s.istifadeci_adi = "gunel", "Günel"
+    monkeypatch.setattr(TELEB, "rehberdir", lambda x: False)
+    TELEB.stok_teleb_yaz(s, "Səhv", None)
+    TELEB.stok_teleb_qerar(s, "T-001", "legv")
+    assert TELEB.stok_teleb_qerar(s, "T-001", "sil")["metn"] == "Oldu: T-001 — silindi."   # ləğv ediləndən sonra da silinir
+    TELEB.stok_teleb_yaz(s, "Maska", 1, "qutu")
+    TELEB.status_deyis({"T-002"}, "tesdiq")
+    assert "silinmir" in TELEB.stok_teleb_qerar(s, "T-002", "sil")["metn"]                 # təsdiqlənmiş sifarişə düşüb

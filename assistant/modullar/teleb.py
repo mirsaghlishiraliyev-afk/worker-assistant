@@ -170,11 +170,17 @@ def stok_teleb_qerar(s, nomre, qerar):
          "ləğv": "legv", "sil": "silindi", "silindi": "silindi"}.get(norm(qerar).strip(), None)
     if q in ("legv", "silindi"):  # tələbi yazan özü (və ya rəhbər) gözləyən tələbi ləğv edir / silir — məs. səhvən yazılıb
         login, _ = _kim(s)
-        hedef = [t["no"] for t in hamisi() if t["no"] in _nomreler(nomre) and t["status"] == "gozleyir"
-                 and (rehberdir(s) or t["login"] == login)]
+        # ləğv: yalnız gözləyən; silmək: gözləyən, ləğv və ya rədd edilmiş (təsdiqlənmiş / sifariş edilmiş — sifarişə düşüb, silinmir)
+        olar = ("gozleyir",) if q == "legv" else ("gozleyir", "legv", "redd")
+        secilen = [t for t in hamisi() if t["no"] in _nomreler(nomre) and (rehberdir(s) or t["login"] == login)]
+        hedef = [t["no"] for t in secilen if t["status"] in olar]
         if not hedef:
-            return {"metn": f"«{nomre}»: {'silinəcək' if q == 'silindi' else 'ləğv ediləcək'} gözləyən tələb tapılmadı "
-                            f"(yalnız öz tələbinizi {'silə' if q == 'silindi' else 'ləğv edə'} bilərsiniz).", "ui": None}
+            if secilen:
+                return {"metn": f"{', '.join(t['no'] for t in secilen)} artıq «{STATUSLAR[secilen[0]['status']]}» — "
+                                + ("təsdiqlənmiş və sifariş edilmiş tələb silinmir." if q == "silindi" else "yalnız gözləyən tələb ləğv olunur."),
+                        "ui": None}
+            return {"metn": f"«{nomre}»: tələb tapılmadı (yalnız öz tələbinizi {'silə' if q == 'silindi' else 'ləğv edə'} bilərsiniz).",
+                    "ui": None}
         status_deyis(set(hedef), q)  # silinən siyahılarda görünmür, nömrəsi isə təkrarlanmır
         return {"metn": f"Oldu: {', '.join(hedef)} — {STATUSLAR[q]}.", "ui": None}
     if not rehberdir(s):
