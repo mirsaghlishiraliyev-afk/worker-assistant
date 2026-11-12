@@ -61,8 +61,10 @@ S = _Proksi()
 
 # ---------------- giriş (şirkət e-poçtu: IMAP mail.gov.az və ya domen) ----------------
 ACIQ = {"/saglamliq", "/giris", "/giris/google", "/giris/google/geri", "/giris/kod", "/giris/mobil", "/qeydiyyat",
+        "/giris/bagla", "/giris/bagla/kod",
         "/static/logo.svg", "/static/favicon.svg"}
 QEYD_KUKI = "wa_qeyd"  # telefonla ilk giriş: təsdiqlənmiş nömrə, qeydiyyat tamamlanana qədər
+BAGLA_KUKI = "wa_bagla"  # poçtla giriş telefonla yaradılmış hesaba: o hesabın nömrəsinə kodla təsdiq
 G.MOBIL_MUMKUN = H.mobil_mumkun
 
 
@@ -105,7 +107,7 @@ def giris_et(request: Request, login: str = Form(""), parol: str = Form(""), usu
         return RedirectResponse("/", status_code=303)
     if G.YERLI:  # telefon rejimi: parolsuz, ünvan istifadəçini tanımaq üçündür
         try:
-            return _daxil_et(request, G.yerli_yoxla(login, usul if usul in ("outlook", "gmail") else "outlook"))
+            return _poct_ile_daxil(request, G.yerli_yoxla(login, usul if usul in ("outlook", "gmail") else "outlook"))
         except G.GirisXetasi as x:
             return HTMLResponse(G.sehife(str(x), login, usul), status_code=400)
     acar = f"{(login or '').strip().lower()}|{request.client.host if request.client else ''}"
@@ -121,7 +123,7 @@ def giris_et(request: Request, login: str = Form(""), parol: str = Form(""), usu
         G.ugursuz(acar)
         return HTMLResponse(G.sehife("İstifadəçi adı və ya parol səhvdir.", login), status_code=401)
     G.ugurlu(acar)
-    return _daxil_et(request, u)
+    return _poct_ile_daxil(request, u)
 
 
 def _daxil_et(request, u):
@@ -170,15 +172,72 @@ def giris_mobil(request: Request, tel: str = Form(""), kod: str = Form("")):
     return r
 
 
+def _poct_ile_daxil(request, u):
+    """Poçtla (Outlook/Gmail) giriş: ünvan telefonla yaradılmış hesaba bağlıdırsa — həmin hesaba (qaldığı yerdən davam).
+    Serverdə bunun üçün o hesabın nömrəsinə gələn kod lazımdır (poçt ünvanını yazmaq hesabı «tutmağa» yetməsin)."""
+    import time as _t
+    mail = H.poct(u.get("mail")) or H.poct(u["login"])
+    hesab = H.mail_ile(mail) if mail else None
+    if not hesab or hesab["login"] == u["login"]:
+        return _daxil_et(request, u)
+    if G.YERLI or hesab.get("mail_tesdiq"):  # telefonda (parolsuz rejim) və ya bağlantı əvvəl təsdiqlənib
+        H.mail_tesdiqle(hesab["login"])
+        return _daxil_et(request, {"login": hesab["login"], "ad": hesab.get("ad") or u.get("ad", "")})
+    r = RedirectResponse("/giris/bagla", status_code=303)
+    r.set_cookie(BAGLA_KUKI, G._imzala({"hedef": hesab["login"], "mail": mail, "exp": int(_t.time() + 900)}), max_age=900,
+                 httponly=True, samesite="lax", secure=_https(request), path="/")
+    return r
+
+
+def _bagla_kukisi(request):
+    import time as _t
+    d = G._imza_oxu(request.cookies.get(BAGLA_KUKI))
+    h = H.al(d.get("hedef")) if isinstance(d, dict) and d.get("exp", 0) > _t.time() else None
+    return (d, h) if h else (None, None)
+
+
+@app.get("/giris/bagla")
+def bagla_sehifesi(request: Request, xeta: str = ""):
+    d, h = _bagla_kukisi(request)
+    if not h:
+        return RedirectResponse("/giris", status_code=303)
+    return HTMLResponse(H.bagla_sehifesi(d["mail"], h, xeta))
+
+
+@app.post("/giris/bagla/kod")
+def bagla_kod(request: Request, kanal: str = Form("sms")):
+    d, h = _bagla_kukisi(request)
+    if not h:
+        return {"ok": False, "metn": "Vaxt keçib — yenidən daxil olun."}
+    return H.kod_gonder(h["tel"], kanal)  # nömrə brauzerə göndərilmir: hesabdan götürülür
+
+
+@app.post("/giris/bagla")
+def bagla(request: Request, kod: str = Form("")):
+    d, h = _bagla_kukisi(request)
+    if not h:
+        return RedirectResponse("/giris", status_code=303)
+    ok, xeta = H.kod_yoxla(h["tel"], kod)
+    if not ok:
+        return HTMLResponse(H.bagla_sehifesi(d["mail"], h, xeta), status_code=401)
+    H.mail_tesdiqle(h["login"])
+    r = _daxil_et(request, {"login": h["login"], "ad": h.get("ad") or h["login"]})
+    r.delete_cookie(BAGLA_KUKI, path="/")
+    return r
+
+
 def _qeyd_kim(request):
-    """Qeydiyyatı kim tamamlayır: daxil olmuş istifadəçi (telefonu/peşəsi yoxdur) və ya telefonla ilk dəfə gələn."""
+    """Qeydiyyatı kim tamamlayır: daxil olmuş istifadəçi (telefonu/poçtu/peşəsi yoxdur) və ya telefonla ilk dəfə gələn.
+    Qaytarır: (login, ad, tel, tel təsdiqli, poçt, poçt dəyişməz)."""
     u = G.kuki_oxu(request.cookies.get(G.KUKI))
     if u:
         h = H.al(u["l"]) or {}
-        return u["l"], h.get("ad") or (u.get("a") if u.get("a") != u["l"] else ""), h.get("tel", ""), bool(h.get("tel_tesdiq")), None
+        mail = h.get("mail") or H.poct(u["l"])
+        return (u["l"], h.get("ad") or (u.get("a") if u.get("a") != u["l"] else ""), h.get("tel", ""), bool(h.get("tel_tesdiq")),
+                mail, bool(H.poct(u["l"])))
     q = _qeyd_kukisi(request)
     if q:
-        return q["tel"], H.ad_tap(tel=q["tel"]), q["tel"], True, q
+        return q["tel"], H.ad_tap(tel=q["tel"]), q["tel"], True, "", False
     return None
 
 
@@ -187,37 +246,45 @@ def qeydiyyat(request: Request):
     k = _qeyd_kim(request)
     if not k:
         return RedirectResponse("/giris", status_code=303)
-    login, ad, tel, tesdiqli, _ = k
+    login, ad, tel, tesdiqli, mail, sabit = k
     prf = PR.al(login)
-    return HTMLResponse(H.qeydiyyat_sehifesi(ad=ad, tel=tel, tesdiqli=tesdiqli, secilmis=(prf or {}).get("peseler", []),
-                                             izah=None if ad else "Adınızı tapa bilmədim — ad və soyadınızı yazın."))
+    return HTMLResponse(H.qeydiyyat_sehifesi(ad=ad, tel=tel, tesdiqli=tesdiqli, secilmis=(prf or {}).get("peseler", []), mail=mail,
+                                             mail_sabit=sabit, izah=None if ad else "Adınızı tapa bilmədim — ad və soyadınızı yazın."))
 
 
 @app.post("/qeydiyyat")
-def qeydiyyat_saxla(request: Request, ad: str = Form(""), tel: str = Form(""), kod: str = Form(""), peseler: list[str] = Form([])):
+def qeydiyyat_saxla(request: Request, ad: str = Form(""), tel: str = Form(""), kod: str = Form(""), mail: str = Form(""),
+                    peseler: list[str] = Form([])):
     k = _qeyd_kim(request)
     if not k:
         return RedirectResponse("/giris", status_code=303)
-    login, _, kohne_tel, tesdiqli, q = k
+    login, _, kohne_tel, tesdiqli, kohne_mail, sabit = k
     ad, t = " ".join(ad.split()), QB.telefon(tel) or (QB.telefon(kohne_tel) if tesdiqli else "")
+    m = kohne_mail if sabit else H.poct(mail)
 
-    def xeta(m):
-        return HTMLResponse(H.qeydiyyat_sehifesi(m, ad=ad, tel=tel or kohne_tel, tesdiqli=tesdiqli, secilmis=peseler), status_code=400)
+    def xeta(x):
+        return HTMLResponse(H.qeydiyyat_sehifesi(x, ad=ad, tel=tel or kohne_tel, tesdiqli=tesdiqli, secilmis=peseler,
+                                                 mail=mail or kohne_mail, mail_sabit=sabit), status_code=400)
     if len(ad) < 3:
         return xeta("Ad soyadı yazın.")
     if not t:
         return xeta("Telefon nömrəsi məcburidir (məs.: 050 123 45 67).")
+    if not m:
+        return xeta("Poçt ünvanı məcburidir (məs.: ad.soyad@asf.gov.az və ya ad@gmail.com).")
+    basqa = H.mail_ile(m)
+    if basqa and basqa["login"] != login:
+        return xeta("Bu poçt ünvanı başqa hesaba bağlıdır — həmin poçtla daxil olun.")
     if not [p for p in peseler if p in PR.KODLAR]:
         return xeta("Peşə məcburidir — siyahıdan ən azı birini seçin.")
     tesdiq = tesdiqli and t == QB.telefon(kohne_tel)
     if not tesdiq and kod:
-        ok, m = H.kod_yoxla(t, kod)
+        ok, kod_xetasi = H.kod_yoxla(t, kod)
         if not ok:
-            return xeta(m)
+            return xeta(kod_xetasi)
         tesdiq = True
     if not tesdiq and H.mobil_mumkun():
         return xeta("Nömrəni təsdiqləyin: «Təsdiq kodu göndər», sonra gələn kodu yazın.")
-    H.saxla(login, ad, t, tesdiq)
+    H.saxla(login, ad, t, tesdiq, m)
     PR.saxla(login, peseler)
     TP.qeyd_et(login, ad)
     r = _daxil_et(request, {"login": login, "ad": ad})
@@ -266,7 +333,7 @@ def google_geri(request: Request, code: str = "", state: str = "", error: str = 
         G.ugursuz(acar)
         return xeta(str(x), 403)
     G.ugurlu(acar)
-    r = _daxil_et(request, u)
+    r = _poct_ile_daxil(request, u)
     r.delete_cookie(G.OAUTH_KUKI, path="/giris/google")
     return r
 
