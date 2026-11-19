@@ -226,3 +226,16 @@ def test_rehbere_gonder_nomresiz(monkeypatch):
     n = TELEB.stok_teleb_rehbere(s, **plan[1])
     assert "T-001 Əlcək" in n["ui"]["kartlar"][0]["metn"] and "T-002 Diş geli" in n["ui"]["kartlar"][0]["metn"]
     assert TELEB.qayda(s, "Tələbləri rəhbərə bildir")[0] == "stok_teleb_rehbere"
+
+
+def test_rehber_telefonu_yazilanda_bildiris_hazir(monkeypatch):
+    from assistant.modullar import stok as ST
+    s = S()
+    s.istifadeci_login, s.istifadeci_adi = "gunel", "Günel"
+    monkeypatch.setattr(TELEB, "rehberdir", lambda x: False)
+    monkeypatch.setattr(ST, "_rehber_fayli", lambda: TELEB.QOVLUQ / "rehber.json")
+    assert ST.rehber_telefonu(s, "055 274 22 67")["ui"] is None            # gözləyən tələb yoxdur
+    TELEB.stok_teleb_yaz(s, "Diş geli", 1, "ədəd")
+    n = ST.rehber_telefonu(s, "055 274 22 67")
+    assert "mesaj göndərmir" in n["metn"]
+    assert n["ui"]["kartlar"][0]["link"].startswith("https://wa.me/994552742267")

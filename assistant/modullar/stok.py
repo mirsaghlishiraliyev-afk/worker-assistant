@@ -364,7 +364,11 @@ def rehber_telefonu(s, telefon_nomresi):
         return {"metn": f"«{telefon_nomresi}» nömrə kimi oxunmadı. Məs.: 050 123 45 67.", "ui": None}
     _rehber_fayli().parent.mkdir(parents=True, exist_ok=True)
     _rehber_fayli().write_text(json.dumps({"tel": t}), encoding="utf-8")
-    return {"metn": f"Oldu: klinika rəhbərinin nömrəsi {QB.tel_goster(t)}. Stok bildirişləri bu nömrəyə gedəcək.", "ui": None}
+    metn = f"Oldu: klinika rəhbərinin nömrəsi {QB.tel_goster(t)} — yadda saxlandı (bu əmr mesaj göndərmir)."
+    n = TELEB.stok_teleb_rehbere(s)  # gözləyən tələblər varsa — bildiriş dərhal hazırlanır
+    if n.get("ui"):
+        return {"metn": metn + " Gözləyən tələbləriniz var — rəhbərə bildiriş hazırdır: " + n["metn"], "ui": n["ui"]}
+    return {"metn": metn + " Stok tələbləri və bildirişlər bu nömrəyə hazırlanacaq.", "ui": None}
 
 
 # ======================= lokal (AI-sız) rejim =======================
