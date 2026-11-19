@@ -252,6 +252,16 @@ def _no(x):
     return "T-" + x.upper().replace("-", "")[1:].zfill(3)
 
 
+def _teleb_pesesi(s):
+    """İstifadəçinin peşəsində stok tələbləri var (diş həkimi, klinika rəhbəri); giriş / peşə yoxdursa — bəli."""
+    login, _ = _kim(s)
+    if not login:
+        return True
+    from .. import profil as PR  # dövri importun qarşısını almaq üçün
+    p = PR.al(login)
+    return not p or "teleb" in PR.modullar(p)
+
+
 def qayda(s, mesaj):
     """Fayldan asılı deyil: tələb yazmaq, siyahı, qərar, rəhbərə bildiriş. Başqa əmr gələndə «Nə lazımdır?» gözləməsi bitir."""
     plan = _qayda(s, mesaj)
@@ -278,6 +288,11 @@ def _qayda(s, mesaj):
         return "stok_telebleri", {}
     if re.search(r"^\s*(?:(?:yeni|bir)\s+)*(stoka?\s+)?teleb\b", n) or (
             re.search(r"\bteleb\b", n) and EMR_RE.match(n.replace("teleb", "").strip())):  # «yeni tələb yarat»
+        return "stok_teleb_yaz", tehlil(mesaj)
+    # «Diş geli 1 ədəd», «Əlcək 5 paket, təcili» — «tələb» sözü olmasa da: məhsul + miqdar + stok vahidi
+    if len(n.split()) <= 8 and re.match(rf"^\s*[^\d?]*[^\W\d][^\d?]*?\s+\d+(?:[.,]\d+)?\s*(?:{VAHIDLER})\b[\s,]*(?:t[əe]cili)?[\s.!]*$",
+                                         mesaj, re.I) and not re.search(r"\?|goster|xulase|legv|sil\b|rehber|tesdiq|redd|sifaris|techizat", n) \
+            and _teleb_pesesi(s):
         return "stok_teleb_yaz", tehlil(mesaj)
     # «Nə lazımdır?» sualından sonrakı cavab tələbdir — amma nömrəli (T-…) və ya əmr sözlü mesaj deyil
     if getattr(s, "teleb_gozle", False) and len(n.split()) <= 15 and not re.search(

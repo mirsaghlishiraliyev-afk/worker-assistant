@@ -124,7 +124,7 @@ def test_gozleme_rejiminde_emr_teleb_sayilmir():
     plan = TELEB.qayda(s, "T-001 və T-002 ni rəhbərə göndər")
     assert plan == ("stok_teleb_rehbere", {"nomre": "T-001,T-002", "gonder": True})
     assert not s.teleb_gozle                                                       # gözləmə bitdi
-    assert TELEB.qayda(s, "Maska 3 qutu") is None                                  # artıq tələb kimi tutulmur
+    assert TELEB.qayda(s, "Maska") is None                                         # artıq «Nə lazımdır?» cavabı gözlənilmir
     assert len(TELEB.hamisi()) == 2
 
 
@@ -189,3 +189,25 @@ def test_emr_mehsul_sayilmir(metn):
 def test_fel_ile_mehsul():
     assert TELEB.tehlil("tələb formalaşdır əlcək 5 paket")["mehsul"] == "əlcək"
     assert TELEB.tehlil("Tələb: Açar")["mehsul"] == "Açar"          # məhsul adı fel kimi atılmır
+
+
+def test_teleb_sozu_olmadan(monkeypatch):
+    """«Diş geli 1 ədəd» — məhsul + miqdar + vahid: tələbdir (yalnız stok tələbləri olan peşədə)."""
+    s = S()
+    monkeypatch.setattr(TELEB, "_teleb_pesesi", lambda x: True)
+    assert TELEB.qayda(s, "diş geli 1 ədəd") == ("stok_teleb_yaz", {"mehsul": "diş geli", "miqdar": 1.0, "vahid": "ədəd",
+                                                                    "tecili": False})
+    assert TELEB.qayda(s, "Əlcək 5 paket, təcili")[1]["tecili"] is True
+    assert TELEB.qayda(s, "neçə əlcək 5 paket?") is None and TELEB.qayda(s, "100 ədəd") is None
+    monkeypatch.setattr(TELEB, "_teleb_pesesi", lambda x: False)                 # məs. mühasib: tutulmur
+    assert TELEB.qayda(s, "diş geli 1 ədəd") is None
+
+
+def test_teleb_pesesi(monkeypatch):
+    from assistant import profil as PR
+    s = S()
+    s.istifadeci_login, s.istifadeci_adi = "x@test.az", "X"
+    monkeypatch.setattr(PR, "al", lambda login: {"peseler": ["dis_hekimi"]})
+    assert TELEB._teleb_pesesi(s)
+    monkeypatch.setattr(PR, "al", lambda login: {"peseler": ["muhasib"]})
+    assert not TELEB._teleb_pesesi(s)
