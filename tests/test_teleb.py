@@ -170,3 +170,22 @@ def test_gozleme_rejiminde_techizatci_teleb_sayilmir():
     s = S()
     s.teleb_gozle = True
     assert TELEB.qayda(s, "Təchizatçı: Qafarov Anar 055 710 43 34") is None
+
+
+@pytest.mark.parametrize("metn", ["tələb formalaşdır", "Tələb yarat", "yeni tələb yarat", "Stoka tələb yaratmaq istəyirəm",
+                                  "tələb yaz", "tələb et"])
+def test_emr_mehsul_sayilmir(metn):
+    """«tələb formalaşdır» — məhsul deyil: tələb yazılmır, «Nə lazımdır?» soruşulur, növbəti cavab tələb olur."""
+    s = S()
+    s.istifadeci_login, s.istifadeci_adi = "hekim", "Həkim"
+    plan = TELEB.qayda(s, metn)
+    assert plan[0] == "stok_teleb_yaz" and plan[1]["mehsul"] == ""
+    assert TELEB.stok_teleb_yaz(s, **plan[1])["metn"].startswith("Nə lazımdır?")
+    assert TELEB.hamisi() == []
+    plan = TELEB.qayda(s, "Əlcək 5 paket")
+    assert plan[1]["mehsul"] == "Əlcək" and plan[1]["miqdar"] == 5
+
+
+def test_fel_ile_mehsul():
+    assert TELEB.tehlil("tələb formalaşdır əlcək 5 paket")["mehsul"] == "əlcək"
+    assert TELEB.tehlil("Tələb: Açar")["mehsul"] == "Açar"          # məhsul adı fel kimi atılmır

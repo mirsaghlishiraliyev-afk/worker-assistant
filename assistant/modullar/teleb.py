@@ -82,11 +82,21 @@ def rehberdir(s):
 
 
 # ======================= mətndən tələb =======================
+# «tələb formalaşdır / yarat / yaz ...» — məhsul deyil, əmrdir: «Nə lazımdır?» soruşulur
+_FEL = (r"(?:formalasdir|yarat|olustur|hazirla|yaz|qeyd\s+et|daxil\s+et|elave\s+et|ac|et|gonder)"
+        r"(?:maq|mek|in|iniz|un|irem|iram|aq|ek)?")
+EMR_RE = re.compile(rf"^(?:(?:yeni|bir)\s+)*(?:stoka?\s+)?(?:teleb\w*\s*)?(?:{_FEL})?"
+                    r"(?:\s*\b(?:isteyirem|lazimdir|olar|zehmet\s+olmasa|xahis\s+edirem))*\s*[.!?]*$")
+# «tələb formalaşdır: əlcək 5 paket» — əvvəldəki fel atılır
+_FEL_BAS = re.compile(r"^\s*(?:formala[şs]d[ıi]r|yarat|olu[şs]tur|haz[ıi]rla)\w*\s*[:\-–—]?\s+", re.I)
+
+
 def tehlil(metn):
     """«Stoka tələb: Kompozit plomb A2 — 5 ədəd, təcili» -> {mehsul, miqdar, vahid, tecili}."""
     t = str(metn or "").strip()
     tecili = bool(re.search(r"t[əe]cili|acil|bu\s*g[üu]n", t, re.I))
     t = re.sub(r"^\s*(?:stoka?\s+)?t[əe]l[əe]b(?:\s+yaz(?:ıram|iram)?)?\s*[:\-–—]?\s*", "", t, flags=re.I)
+    t = _FEL_BAS.sub("", t)
     t = re.sub(r"[,;\s]*\b(?:t[əe]cili|acil|bu\s*g[üu]n)\b[!.,;\s]*", " ", t, flags=re.I)
     t = re.sub(r"\s*\b(?:laz[ıi]md[ıi]r?|laz[ıi]m(?:\s+olacaq)?|ehtiyac\s+var|bitib|qurtar[ıi]b)\b[!.\s]*$", "", t, flags=re.I)
     miqdar, vahid = None, ""
@@ -100,6 +110,8 @@ def tehlil(metn):
         vahid = (m.group(2) if m.lastindex and m.lastindex >= 2 and m.group(2) else "").lower()
         t = (t[:m.start()] + " " + t[m.end():])
     mehsul = re.sub(r"\s{2,}", " ", t).strip(" -—–,:;.")
+    if miqdar is None and EMR_RE.match(norm(mehsul)):  # «formalaşdır», «yarat» — məhsul adı deyil
+        mehsul = ""
     return {"mehsul": mehsul, "miqdar": miqdar, "vahid": vahid, "tecili": tecili}
 
 
@@ -264,7 +276,8 @@ def _qayda(s, mesaj):
         return "stok_teleb_rehbere", {"gonder": "gonder" in n}
     if re.search(r"telebleri(ni|m)?\b|^telebler\b", n) and not re.search(r"teleb\s*[:\-–—]", n):
         return "stok_telebleri", {}
-    if re.search(r"^\s*(stoka?\s+)?teleb\b|^\s*teleb yaz", n):
+    if re.search(r"^\s*(?:(?:yeni|bir)\s+)*(stoka?\s+)?teleb\b", n) or (
+            re.search(r"\bteleb\b", n) and EMR_RE.match(n.replace("teleb", "").strip())):  # «yeni tələb yarat»
         return "stok_teleb_yaz", tehlil(mesaj)
     # «Nə lazımdır?» sualından sonrakı cavab tələbdir — amma nömrəli (T-…) və ya əmr sözlü mesaj deyil
     if getattr(s, "teleb_gozle", False) and len(n.split()) <= 15 and not re.search(
