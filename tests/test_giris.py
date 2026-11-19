@@ -4,6 +4,7 @@ import pathlib
 import sys
 import tempfile
 import time
+import pytest
 
 os.environ.setdefault("WA_DATA", tempfile.mkdtemp())
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
@@ -714,3 +715,29 @@ def test_telefon_rejimi_poct_unvani_sorusulur(monkeypatch):
     g = TestClient(app)
     assert g.post("/giris", data={"login": "test.istifadeci@gmail.com", "usul": "gmail"}, follow_redirects=False).status_code == 303
     assert c.get("/giris/google", follow_redirects=False).headers["location"] == "/giris"   # OAuth qurulmayıb
+
+
+@pytest.mark.parametrize("env,gozlenen", [
+    ({}, True),                                                    # kompüterdə lokal: giriş soruşulur (parolsuz)
+    ({"WA_YERLI_GIRIS": "0"}, False),                              # açıq söndürülüb
+    ({"WA_HOST": "0.0.0.0"}, False),                               # şəbəkəyə açıq server: parolsuz giriş yanmır
+    ({"WA_IMAP_HOST": "mail.example.az"}, False),                  # parolla giriş qurulub
+])
+def test_lokalda_yerli_giris(env, gozlenen):
+    import os
+    import subprocess
+    e = {k: v for k, v in os.environ.items() if not k.startswith(("WA_HOST", "WA_YERLI", "WA_IMAP", "WA_LDAP", "WA_GOOGLE"))}
+    e.update(env)
+    r = subprocess.run([sys.executable, "-c", "from assistant import giris; print(giris.YERLI)"], env=e,
+                       cwd=pathlib.Path(__file__).resolve().parents[1], capture_output=True, text=True)
+    assert r.stdout.strip() == str(gozlenen), r.stderr
+
+
+def test_sebekede_parolsuz_server_qalxmir():
+    import os
+    import subprocess
+    e = {k: v for k, v in os.environ.items() if not k.startswith(("WA_YERLI", "WA_IMAP", "WA_LDAP", "WA_GOOGLE"))}
+    e.update(WA_HOST="0.0.0.0", WA_YERLI_GIRIS="1")
+    r = subprocess.run([sys.executable, "-m", "assistant"], env=e, cwd=pathlib.Path(__file__).resolve().parents[1],
+                       capture_output=True, text=True, timeout=30)
+    assert r.returncode != 0 and "Təhlükəsizlik" in r.stderr

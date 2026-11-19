@@ -18,7 +18,7 @@ from assistant import giris
 if __name__ == "__main__":
     host = os.environ.get("WA_HOST", "127.0.0.1")
     port = int(os.environ.get("WA_PORT", "8000"))
-    if host not in ("127.0.0.1", "localhost") and not giris.aktiv():
+    if host not in ("127.0.0.1", "localhost", "::1") and not (giris.IMAP_HOST or giris.LDAP_URL or giris.GOOGLE_ID):
         sys.exit("Təhlükəsizlik: server şəbəkəyə açılır (WA_HOST=%s), amma giriş qurulmayıb. Real maliyyə məlumatı "
                  "girişsiz açıla bilməz — WA_IMAP_HOST (məs. mail.gov.az) və WA_IMAP_DOMEN (məs. asf.gov.az) təyin edin." % host)
     print(f"Worker's Assistant: http://{host}:{port}")

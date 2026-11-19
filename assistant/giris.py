@@ -90,7 +90,12 @@ GOOGLE_REDIRECT = _env("WA_GOOGLE_REDIRECT")
 # Android-də avtomatik (sys.getandroidapilevel), və ya WA_YERLI_GIRIS=1; söndürmək: WA_YERLI_GIRIS=0.
 import sys  # noqa: E402
 
-YERLI = _env("WA_YERLI_GIRIS") == "1" or (hasattr(sys, "getandroidapilevel") and _env("WA_YERLI_GIRIS") != "0")
+# Parolsuz «yerli» giriş (poçt / Gmail / Mobil — istifadəçini tanımaq üçün): telefonda (APK) və kompüterdə lokal
+# işlədəndə (WA_HOST=127.0.0.1, başqa giriş üsulu qurulmayıb). Söndürmək: WA_YERLI_GIRIS=0. Şəbəkəyə açıq serverdə
+# (WA_HOST=0.0.0.0) avtomatik yanmır — orada parolla giriş (IMAP / LDAP / Google) lazımdır.
+LOKAL_HOST = _env("WA_HOST", "127.0.0.1") in ("127.0.0.1", "localhost", "::1")
+YERLI = _env("WA_YERLI_GIRIS") == "1" or (_env("WA_YERLI_GIRIS") != "0" and (
+    hasattr(sys, "getandroidapilevel") or (LOKAL_HOST and not (IMAP_HOST or LDAP_URL or GOOGLE_ID))))
 SESSIYA_SAAT = float(_env("WA_SESSIYA_SAAT", "8760" if YERLI else "8") or 8)  # telefonda: bir il
 
 
@@ -449,9 +454,9 @@ def _yerli_sehife(xeta, login, usul, secim, mobil=""):
 <button type="submit">Daxil ol</button></form>''')
     dom = escape((IMAP_DOMENLER or [DOMEN or "asf.gov.az"])[0])
     bas, son = sehife(xeta, login, usul, _qabiq=True).split("<!--FORMLAR-->")
-    return bas + secim + forma("outlook", "Şirkət poçtunuzu yazın — sizi tanımaq üçündür. Telefonda parol tələb olunmur: server "
-                                         "telefonunuzun özündədir.", f"ad.soyad@{dom}") + \
-        forma("gmail", "Gmail ünvanınızı yazın — sizi tanımaq üçündür. Telefonda parol tələb olunmur.", "ad@gmail.com") + mobil + \
+    return bas + secim + forma("outlook", "Şirkət poçtunuzu yazın — sizi tanımaq üçündür. Parol tələb olunmur: server "
+                                         "bu cihazın özündədir.", f"ad.soyad@{dom}") + \
+        forma("gmail", "Gmail ünvanınızı yazın — sizi tanımaq üçündür. Parol tələb olunmur.", "ad@gmail.com") + mobil + \
         (f'<div class="xeta">{escape(xeta)}</div>' if xeta else "") + (MOBIL_JS if mobil else "") + son
 
 

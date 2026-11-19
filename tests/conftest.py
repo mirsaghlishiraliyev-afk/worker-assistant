@@ -6,6 +6,8 @@ import pytest
 
 # Testlər heç vaxt reponun data/ qovluğuna yazmasın: assistant idxal olunmazdan əvvəl müvəqqəti qovluq
 os.environ.setdefault("WA_DATA", tempfile.mkdtemp(prefix="wa_test_"))
+# Lokal işlədəndə parolsuz giriş avtomatik yanır; testlər (köhnə, girişsiz) üçün söndürülür — lazım olan test özü yandırır
+os.environ.setdefault("WA_YERLI_GIRIS", "0")
 
 
 @pytest.fixture(autouse=True)
