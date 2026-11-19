@@ -218,6 +218,25 @@ def stok_teleb_qerar(s, nomre, qerar):
     return {"metn": metn, "ui": None}
 
 
+def _whatsapp_metni(ts, login):
+    """Həkimin öz WhatsApp-ından rəhbərə: ad yazılmır (WhatsApp göstərir), təcililər əvvəl, təsdiq əmri hazır."""
+    ts = sorted(ts, key=lambda t: (not t.get("tecili"), t["no"]))
+    ozu = all(t["login"] == login for t in ts)  # başqalarının tələbi də varsa — kimin olduğu yazılır
+    tecili = sum(1 for t in ts if t.get("tecili"))
+
+    def setir(t):
+        return (f"{t['mehsul'][:1].upper() + t['mehsul'][1:]} — {_miqdar(t)}" + ("" if ozu else f" ({t['kim']})")
+                + (" — TƏCİLİ" if t.get("tecili") else "") + f" [{t['no']}]")
+    if len(ts) == 1:
+        bas = "Salam! " + ("Təcili lazımdır" if tecili else "Stok üçün lazımdır") + f": {setir(ts[0])}."
+    else:
+        bas = (f"Salam! Stok üçün {len(ts)} tələb" + ("im" if ozu else "") + " var"
+               + (f" ({tecili}-i təcili)" if tecili and tecili < len(ts) else " (hamısı təcili)" if tecili else "") + ":\n"
+               + "\n".join(f"{i}. {setir(t)}" for i, t in enumerate(ts, 1)))
+    nolar = ", ".join(t["no"] for t in ts)
+    return bas + f"\n\nTəsdiq üçün Worker's Assistant-da yazın: «{nolar} təsdiq»" + (" (və ya «rədd»)." if len(ts) == 1 else ".")
+
+
 def stok_teleb_rehbere(s, nomre=None, gonder=False):
     """Həkimin tələbini (və ya bütün gözləyənləri) WhatsApp ilə klinika rəhbərinə bildirir."""
     from .stok import _kart, _netice, rehber_tel
@@ -231,7 +250,7 @@ def stok_teleb_rehbere(s, nomre=None, gonder=False):
     siyahi = "; ".join(f"{t['no']} {_setir(t)}" for t in ts)
     tel = rehber_tel()
     k = _kart("stok_teleb", "Klinika rəhbəri", tel, [kim, siyahi], gonder,
-              f"stok_teleb|{tel}|" + ",".join(t["no"] for t in ts), sablonlar=SABLONLAR)
+              f"stok_teleb|{tel}|" + ",".join(t["no"] for t in ts), sablonlar=SABLONLAR, metn=_whatsapp_metni(ts, login))
     n = _netice([k], gonder, "Rəhbərə tələb bildirişi", "Tələbi rəhbərə göndər")
     if not tel:
         n["metn"] = ("Rəhbərin WhatsApp nömrəsi sistemdə yoxdur — rəhbər və ya administrator yazsın: «Rəhbərin telefonu 050 123 45 67». "

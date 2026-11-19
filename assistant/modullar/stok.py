@@ -208,9 +208,11 @@ def stok_veziyyeti(s, yalniz_azalan=False):
     return {"metn": metn, "ui": ui}
 
 
-def _kart(sablon, ad, tel, param, gonder, acar, sablonlar=None):
+def _kart(sablon, ad, tel, param, gonder, acar, sablonlar=None, metn=None):
+    """metn verilibsə — «WhatsApp-da aç» (istifadəçinin öz WhatsApp-ı) üçün o mətn; API (şirkət nömrəsi) şablonla gedir."""
     s = (sablonlar or SABLONLAR)[sablon]
-    metn = re.sub(r"\{\{(\d+)\}\}", lambda m: param[int(m.group(1)) - 1], s["metn"])
+    if metn is None or (gonder and QB.api_aktiv()):
+        metn = re.sub(r"\{\{(\d+)\}\}", lambda m: param[int(m.group(1)) - 1], s["metn"])
     k = {"kime": s["kime"], "ad": ad, "tel": QB.tel_goster(tel), "metn": metn, "sablon": s["ad"], "_acar": acar}
     evvel = QB._gonderilenler()
     if not tel:

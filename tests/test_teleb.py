@@ -85,7 +85,8 @@ def test_rehbere_whatsapp():
     plan = TELEB.qayda(s, "T-001 tələbini rəhbərə bildir")
     assert plan == ("stok_teleb_rehbere", {"nomre": "T-001", "gonder": False})
     k = TELEB.stok_teleb_rehbere(s, **plan[1])["ui"]["kartlar"][0]
-    assert "stoka tələb yazıb: T-001 Kompozit plomb A2 — 5 ədəd (təcili)" in k["metn"]
+    assert k["metn"].startswith("Salam! Təcili lazımdır: Kompozit plomb A2 — 5 ədəd — TƏCİLİ [T-001].")
+    assert "«T-001 təsdiq»" in k["metn"] and "yazıb" not in k["metn"]                # ad yazılmır: WhatsApp göstərir
     assert k["link"].startswith("https://wa.me/994507778899")
 
 
@@ -106,7 +107,8 @@ def test_bir_nece_teleb_birlikde():
     plan = TELEB.qayda(s, "T-001,T-002 tələbini rəhbərə bildir")
     assert plan == ("stok_teleb_rehbere", {"nomre": "T-001,T-002", "gonder": False})
     k = TELEB.stok_teleb_rehbere(s, **plan[1])["ui"]["kartlar"]
-    assert len(k) == 1 and "T-001 Əlcək — 5 paket (təcili); T-002 Ağrı kəsici — 2 qutu" in k[0]["metn"] and "T-003" not in k[0]["metn"]
+    assert len(k) == 1 and "(1-i təcili):\n1. Əlcək — 5 paket — TƏCİLİ [T-001]\n2. Ağrı kəsici — 2 qutu [T-002]" in k[0]["metn"]
+    assert "T-003" not in k[0]["metn"]
     plan = TELEB.qayda(s, "T-001, T-002 təsdiq")
     assert plan == ("stok_teleb_qerar", {"nomre": "T-001,T-002", "qerar": "tesdiq"})
     TELEB.stok_teleb_qerar(s, **plan[1])
@@ -224,7 +226,9 @@ def test_rehbere_gonder_nomresiz(monkeypatch):
     plan = TELEB.qayda(s, "rəhbərə göndər")
     assert plan == ("stok_teleb_rehbere", {"gonder": True})
     n = TELEB.stok_teleb_rehbere(s, **plan[1])
-    assert "T-001 Əlcək" in n["ui"]["kartlar"][0]["metn"] and "T-002 Diş geli" in n["ui"]["kartlar"][0]["metn"]
+    m = n["ui"]["kartlar"][0]["metn"]
+    assert m.startswith("Salam! Stok üçün 2 tələbim var:\n1. Əlcək — 5 paket [T-001]\n2. Diş geli — 1 ədəd [T-002]")
+    assert m.endswith("«T-001, T-002 təsdiq».") and "Günel" not in m
     assert TELEB.qayda(s, "Tələbləri rəhbərə bildir")[0] == "stok_teleb_rehbere"
 
 
