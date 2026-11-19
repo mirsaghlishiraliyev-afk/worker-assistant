@@ -232,13 +232,13 @@ def tapsiriqlar(s):
         yeni = sum(t["status"] == "yeni" for t in mene)
         hisse.append(f"sizə verilən {len(mene)}" + (f" ({yeni} yeni)" if yeni else ""))
         bloklar.append({"tip": "cedvel", "basliq": "Mənə verilən tapşırıqlar", "setirler": _setirler(mene, "isci"),
-                        "sutunlar": ["№", "Tapşırıq", "Rəhbər", "Müddət", "Vəziyyət", "Son addım"]})
+                        "sutunlar": ["#", "Tapşırıq", "Rəhbər", "Müddət", "Vəziyyət", "Son addım"]})
     if verdiyim:
         gec = sum(_gecikir(t) for t in verdiyim)
         tam = sum(t["status"] == "tamamlandi" for t in verdiyim)
         hisse.append(f"verdiyiniz {len(verdiyim)} ({tam} tamamlanıb" + (f", {gec} gecikir" if gec else "") + ")")
         bloklar.append({"tip": "cedvel", "basliq": "Verdiyim tapşırıqlar", "setirler": _setirler(verdiyim, "rehber"),
-                        "sutunlar": ["№", "Tapşırıq", "İşçi", "Müddət", "Vəziyyət", "Son addım"]})
+                        "sutunlar": ["#", "Tapşırıq", "İşçi", "Müddət", "Vəziyyət", "Son addım"]})
     acilacaq = [t for t in mene + verdiyim if t["status"] in ("yeni", "icrada")][:4]
     if acilacaq:
         bloklar.append({"tip": "sual", "variantlar": [{"etiket": f"{t['no']} — ətraflı", "mesaj": t["no"]} for t in acilacaq]})
@@ -340,7 +340,7 @@ def tapsiriq_muddet(s, no, muddet):
 
 # ======================= sorğular (işçi -> rəhbər) =======================
 def _sorgu_cedveli(ss, basliq):
-    return {"tip": "cedvel", "basliq": basliq, "sutunlar": ["№", "Növ", "Kimdən", "Kimə", "Tapşırıq", "Sorğu", "Vəziyyət", "Cavab"],
+    return {"tip": "cedvel", "basliq": basliq, "sutunlar": ["#", "Növ", "Kimdən", "Kimə", "Tapşırıq", "Sorğu", "Vəziyyət", "Cavab"],
             "setirler": [[x["no"], SORGU_NOV[x["nov"]], x["kimden_ad"], x["kime_ad"], x.get("tapsiriq") or "—", x["metn"][:80],
                           SORGU_STATUS[x["status"]], x.get("cavab") or ""] for x in ss]}
 

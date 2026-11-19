@@ -211,3 +211,18 @@ def test_teleb_pesesi(monkeypatch):
     assert TELEB._teleb_pesesi(s)
     monkeypatch.setattr(PR, "al", lambda login: {"peseler": ["muhasib"]})
     assert not TELEB._teleb_pesesi(s)
+
+
+def test_rehbere_gonder_nomresiz(monkeypatch):
+    """Tələblər siyahısından sonra «rəhbərə göndər» — öz gözləyən tələbləri rəhbərə bildirilir (fayl istənmir)."""
+    s = S()
+    s.istifadeci_login, s.istifadeci_adi = "gunel", "Günel"
+    monkeypatch.setattr(TELEB, "rehberdir", lambda x: False)
+    assert TELEB.qayda(s, "rəhbərə göndər") is None                    # gözləyən tələb yoxdur
+    TELEB.stok_teleb_yaz(s, "Əlcək", 5, "paket")
+    TELEB.stok_teleb_yaz(s, "Diş geli", 1, "ədəd")
+    plan = TELEB.qayda(s, "rəhbərə göndər")
+    assert plan == ("stok_teleb_rehbere", {"gonder": True})
+    n = TELEB.stok_teleb_rehbere(s, **plan[1])
+    assert "T-001 Əlcək" in n["ui"]["kartlar"][0]["metn"] and "T-002 Diş geli" in n["ui"]["kartlar"][0]["metn"]
+    assert TELEB.qayda(s, "Tələbləri rəhbərə bildir")[0] == "stok_teleb_rehbere"

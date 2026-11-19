@@ -162,7 +162,7 @@ def stok_telebleri(s, status=None):
                  f"{t['vaxt'][8:10]}.{t['vaxt'][5:7]} {t['vaxt'][11:16]}"] for t in ts]  # telefonda vacib sütunlar əvvəl
     gozleyen = [t for t in ts if t["status"] == "gozleyir"]
     ui = {"tip": "cedvel", "basliq": "Stok tələbləri" if rehber else "Tələblərim",
-          "sutunlar": ["№", "Məhsul", "Miqdar", "", "Vəziyyət", "Kim", "Tarix"], "setirler": setirler}
+          "sutunlar": ["#", "Məhsul", "Miqdar", "", "Vəziyyət", "Kim", "Tarix"], "setirler": setirler}
     metn = f"{len(ts)} tələb" + (f", {len(gozleyen)}-i qərar gözləyir" if gozleyen else "") + "."
     if rehber and gozleyen:
         metn += " Qərar üçün düymələri basın və ya yazın: «T-001 təsdiq» / «T-001 rədd»."
@@ -282,6 +282,12 @@ def _qayda(s, mesaj):
     if m:  # «T-001 və T-002 ni rəhbərə göndər» — «tələb» sözü olmasa da
         return "stok_teleb_rehbere", {"nomre": nomreler,
                                       "gonder": bool(re.search(r"\bgonder\b", n))}
+    # «rəhbərə göndər» (nömrəsiz, «tələb» sözü olmadan): öz gözləyən tələbləri — rəhbərin stok bildirişi deyilsə
+    if re.fullmatch(r"\s*(?:hamisini\s+|bunlari\s+|telebleri(?:mi)?\s+)?rehbere\s+(gonder|bildir|yolla)\w*[\s.!]*", n) and (
+            not rehberdir(s) or not getattr(s, "fayl_var", False)):
+        login, _ = _kim(s)
+        if any(t["status"] == "gozleyir" and (rehberdir(s) or t["login"] == login) for t in hamisi()):
+            return "stok_teleb_rehbere", {"gonder": "gonder" in n or "yolla" in n}
     if re.search(r"telebi rehbere (gonder|bildir)", n):
         return "stok_teleb_rehbere", {"gonder": "gonder" in n}
     if re.search(r"telebleri(ni|m)?\b|^telebler\b", n) and not re.search(r"teleb\s*[:\-–—]", n):
