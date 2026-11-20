@@ -177,3 +177,21 @@ def test_bitki_ve_heyvan_fayllari():
     r2 = {"setir": 2, "mebleg": 40.0, "t_fin_voen": "7ZZ2222", "odeyici": "TEST B", "teyinat": "bitki"}
     c = B._namizedler(r2, ms, set())                                                  # yalnız müddəti bitmiş: yenə təklif olunur
     assert [m["no"] for m in c] == ["BS-2026000902-PS"] and not c[0]["uygun"]
+
+
+def test_doldurulmus_sablon_excel_gorunusu():
+    """Doldurulmuş şablon: tarix sütunu «#####» olmasın (en ≥ 12), FİN mətn — yaşıl üçbucaq söndürülüb (ignoredErrors)."""
+    import zipfile
+    sablon = QOV / "Sığorta haqqı inteqrasiya faylı.xlsx"
+    wb = openpyxl.Workbook()
+    wb.active.title = "Sheet1"
+    wb.active.append(B.SUTUNLAR_1C)
+    wb.active.column_dimensions["A"].width = 6                                         # dar tarix sütunu
+    wb.save(sablon)
+    ad, _ = B._sablonu_doldur({"yol": sablon, "ad": sablon.name},
+                              [[__import__("datetime").date(2026, 10, 1), "0012345", "", "AZ00TEST", 20.0, "V-001"]], QOV, "20261120_101010")
+    w = openpyxl.load_workbook(QOV / ad)                                                # fayl açılır (XML düzgündür)
+    ws = w["Sheet1"]
+    assert ws.column_dimensions["A"].width >= 12 and ws["B2"].value == "0012345"
+    xml = zipfile.ZipFile(QOV / ad).read("xl/worksheets/sheet1.xml").decode()
+    assert '<ignoredError sqref="A2:F2" numberStoredAsText="1"/>' in xml and xml.index("<ignoredErrors") < xml.index("</worksheet>")

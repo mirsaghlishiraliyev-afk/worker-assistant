@@ -915,6 +915,31 @@ def sablon_mi(fayl):
     return None
 
 
+def _metn_reqem_xeberdarligini_sondur(yol, vereq_no, sqref):
+    """Excel FİN/VÖEN (mətn kimi saxlanan rəqəm, əvvəldəki 0-lar itməsin deyə) üçün yaşıl üçbucaq göstərməsin:
+    vərəqin XML-inə <ignoredErrors numberStoredAsText> yazılır (openpyxl bunu yaza bilmir). vereq_no: 0-dan."""
+    import shutil
+    import zipfile
+    ad = f"xl/worksheets/sheet{vereq_no + 1}.xml"
+    mvq = pathlib.Path(str(yol) + ".tmp")
+    with zipfile.ZipFile(yol) as z, zipfile.ZipFile(mvq, "w", zipfile.ZIP_DEFLATED) as yeni:
+        for info in z.infolist():
+            data = z.read(info.filename)
+            if info.filename == ad and b"<ignoredErrors" not in data:
+                xml = data.decode("utf-8")
+                el = f'<ignoredErrors><ignoredError sqref="{sqref}" numberStoredAsText="1"/></ignoredErrors>'
+                # CT_Worksheet sırası: ... headerFooter, rowBreaks, colBreaks, customProperties, cellWatches, ignoredErrors, smartTags, drawing ...
+                for teq in ("<smartTags", "<drawing", "<legacyDrawing", "<drawingHF", "<picture", "<oleObjects", "<controls",
+                            "<webPublishItems", "<tableParts", "<extLst", "</worksheet>"):
+                    i = xml.find(teq)
+                    if i >= 0:
+                        xml = xml[:i] + el + xml[i:]
+                        break
+                data = xml.encode("utf-8")
+            yeni.writestr(info, data)
+    shutil.move(mvq, yol)
+
+
 def _sablonu_doldur(sablon, setirler, qovluq, vaxt):
     """Mühasibin öz şablon faylını açır, başlığa görə sütunları tapır, mövcud sətirlərin altına yazır."""
     from openpyxl import load_workbook
@@ -933,9 +958,17 @@ def _sablonu_doldur(sablon, setirler, qovluq, vaxt):
                 c.number_format = "DD.MM.YYYY"
             elif ad == "MƏBLƏĞ":
                 c.number_format = "0.00"
+    from openpyxl.utils import get_column_letter
+    for ad_, j in cols.items():  # tarix «#####» görünməsin: sütun məzmuna görə genişlənir (daralmır)
+        lazim = 12 if ad_ in ("TARİX", "MƏBLƏĞ") else max([len(str(ws.cell(i, j).value or "")) for i in range(bas, son + len(setirler) + 1)] + [10]) + 2
+        cd = ws.column_dimensions[get_column_letter(j)]
+        if (cd.width or 0) < lazim:
+            cd.width = min(lazim, 45)
     kok = pathlib.Path(sablon["ad"]).stem
     ad = f"{kok} (doldurulub {vaxt[:8]}_{vaxt[9:]}).xlsx"
     wb.save(qovluq / ad)
+    _metn_reqem_xeberdarligini_sondur(qovluq / ad, wb.sheetnames.index(vereq),
+                                      f"A{bas + 1}:{get_column_letter(max(cols.values()))}{son + len(setirler)}")
     return ad, son - bas
 
 
@@ -1146,6 +1179,7 @@ def bank_hesabat(s, muqavilesiz=False, ehate=None):
         row[SUTUNLAR_1C.index("MƏBLƏĞ")].number_format = "0.00"
     for col in si.columns:
         si.column_dimensions[col[0].column_letter].width = max(12, max(len(str(c.value or "")) for c in col) + 2)
+    si.column_dimensions["A"].width = max(si.column_dimensions["A"].width or 0, 12)
     ad_1c = f"sigorta_haqqi_inteqrasiya_{vaxt}.xlsx"
     sablon = getattr(s, "sablon", None)
     evvelki = 0
@@ -1153,6 +1187,7 @@ def bank_hesabat(s, muqavilesiz=False, ehate=None):
         ad_1c, evvelki = _sablonu_doldur(sablon, [x for r in butun if inteqrasiya(r) for x in setirler_1c(r)], qovluq, vaxt)
     else:
         wi.save(qovluq / ad_1c)
+        _metn_reqem_xeberdarligini_sondur(qovluq / ad_1c, 0, f"A2:F{max(si.max_row, 2)}")
 
     yox = sum(1 for r in b["setirler"] if r["kateqoriya"] == "yoxlanmali" or r["setir"] in tekrar)
     natamam = sum(1 for r in butun if inteqrasiya(r) and qeyd(r))
