@@ -674,7 +674,7 @@ def test_cixaris_sablon_ve_muqavile_birlikde():
         time.sleep(0.1)
     ne = st["netice"]
     assert ne["bank"]["daxilolma"] == 9 and ne["sablon"] == sablon.name
-    assert ne["muqavile"] == {"ad": "query_result.xlsx", "say": 8, "uygun": 7}
+    assert ne["muqavile"] == {"ad": "query_result.xlsx", "adlar": ["query_result.xlsx"], "say": 8, "uygun": 7}
     assert {f["nov"] for f in ne["fayl_ref"]} == {"fayl", "sablon", "muqavile"}
     sohbet = lambda m: c.post("/api/sohbet", json={"mesaj": m}).json()  # noqa: E731
     sohbet("Şablonu doldur")
@@ -741,3 +741,47 @@ def test_sebekede_parolsuz_server_qalxmir():
     r = subprocess.run([sys.executable, "-m", "assistant"], env=e, cwd=pathlib.Path(__file__).resolve().parents[1],
                        capture_output=True, text=True, timeout=30)
     assert r.returncode != 0 and "Təhlükəsizlik" in r.stderr
+
+
+def test_bitki_heyvan_yuklenir_cixaris_gozlenilir():
+    """Yalnız bitki + heyvan müqavilə faylları: hər ikisi tanınır və birləşir; «inteqrasiya faylını doldur» —
+    çıxarışın çatışmadığı deyilir; sonra çıxarış yüklənəndə müqavilələr qalır."""
+    import openpyxl
+    _qur()
+    c = TestClient(app)
+    _gir(c, "resad", "Parol2")
+    from assistant import app as A
+    A._SESSIYALAR.pop("resad", None)                                                 # təmiz sessiya
+    q = pathlib.Path(tempfile.mkdtemp())
+
+    def fayl(ad, basliq, setirler):
+        wb = openpyxl.Workbook()
+        wb.active.append(basliq)
+        for r in setirler:
+            wb.active.append(r)
+        wb.save(q / ad)
+        return q / ad
+    bitki = fayl("bitki.xlsx", ["Sığorta müqaviləsinin nömrəsi", "Sığortalı Fin/Voen", "Aqrar sığorta haqqı", "Status"],
+                 [["BS-2026000001-PS", "1AB2CD3", 10, "Ödəniş gözləyir"]])
+    heyvan = fayl("heyvan.xlsx", ["Sığorta müqaviləsinin nömrəsi", "Sığortalı Fin/Voen",
+                                  "Aqrar Sığortalı tərəfindən ödənilən sığorta haqqı", "Status"],
+                  [["HS-2026000002-QS", "2AB2CD3", 20, "Aktivdir"], ["HS-2026000002-QS", "2AB2CD3", 20, "Aktivdir"]])
+
+    def yukle(*yollar):
+        j = c.post("/api/yukle", files=[("fayl", (y.name, open(y, "rb"))) for y in yollar]).json()
+        for _ in range(100):
+            st = c.get(f"/api/yukle/{j['is']}").json()
+            if st["status"] != "isleyir":
+                return st["netice"]
+            time.sleep(0.1)
+    ne = yukle(bitki, heyvan)
+    assert ne["yalniz_muqavile"] and ne["muqavile"]["adlar"] == ["bitki.xlsx", "heyvan.xlsx"]
+    assert ne["muqavile"]["say"] == 2 and ne["muqavile"]["uygun"] == 2
+    r = c.post("/api/sohbet", json={"mesaj": "inteqrasiya faylini doldur"}).json()
+    assert r["cavab"].startswith("İnteqrasiya faylı bank çıxarışından hazırlanır") and "2 müqavilə" in r["cavab"]
+    ne = yukle(DATA / "bank_kapital_test.xlsx")
+    assert ne["bank"] and ne["muqavile"]["say"] == 2                                   # çıxarış gəldi, müqavilələr qaldı
+    bitki2 = fayl("bitki (yeni).xlsx", ["Sığorta müqaviləsinin nömrəsi", "Sığortalı Fin/Voen", "Aqrar sığorta haqqı", "Status"],
+                  [["BS-2026000009-PS", "1AB2CD3", 30, "Ödəniş gözləyir"]])
+    ne = yukle(bitki2)                                                                 # yeni bitki köhnə bitkini əvəz edir
+    assert ne["muqavile"]["adlar"] == ["heyvan.xlsx", "bitki (yeni).xlsx"] and ne["muqavile"]["say"] == 2

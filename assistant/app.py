@@ -438,7 +438,8 @@ def veziyyet(request: Request = None):
             "pese_effektiv": PR.effektiv(PR.al(_CARI.get())),
             "bildiris": TP.bildirisler(_CARI.get()),  # yeni tapşırıq, gecikən, cavab gözləyən sorğu
             "sablon": S.sablon["ad"] if getattr(S, "sablon", None) else None,
-            "muqavile": ({"ad": S.muqavileler["ad"], "say": len(S.muqavileler["siyahi"]),
+            "muqavile": ({"ad": S.muqavileler["ad"], "adlar": S.muqavileler.get("adlar") or [S.muqavileler["ad"]],
+                          "say": len(S.muqavileler["siyahi"]),
                           "uygun": sum(m["uygun"] for m in S.muqavileler["siyahi"])} if getattr(S, "muqavileler", None) else None),
             "bank": ({"daxilolma": len(S.bank["setirler"]), "yoxlanmali": sum(r["kateqoriya"] == "yoxlanmali" for r in S.bank["setirler"]),
                       "sual": len(BANK._sual_setirleri(S.bank)),
@@ -485,10 +486,15 @@ def _is_baslat(yollar, dovr, rejim="", kitabxanaya=True, ref=None):
                 if sablonlar:  # inteqrasiya şablonu: yadda saxlanır, 1C faylı onun üzərində doldurulur
                     S.sablon = {"yol": sablonlar[0][0], "ad": sablonlar[0][1]}
                 if muqler:  # müqavilələr: nömrəsi olmayan mədaxillər FİN ilə bunlara tutuşdurulur
-                    evvel = getattr(S, "muqavileler", None) or {}  # bitki + heyvan: ayrı-ayrı yüklənsə də birləşir
-                    adlar = list(dict.fromkeys((evvel.get("adlar") or ([evvel["ad"]] if evvel.get("ad") else [])) + [a for _, a in muqler]))
-                    S.muqavileler = {"ad": ", ".join(adlar), "adlar": adlar, "siyahi": BANK.muqavileleri_birlesdir(
-                        evvel.get("siyahi"), *(BANK.muqavile_oxu(y) for y, _ in muqler))}
+                    # bitki (BS-) + heyvan (HS-) bir-birini tamamlayır; eyni növün yeni faylı köhnəsini əvəz edir
+                    yeni = [{"ad": a, "siyahi": BANK.muqavile_oxu(y)} for y, a in muqler]
+                    nov = {m["no"][:3] for f in yeni for m in f["siyahi"]}
+                    kohne = [f for f in (getattr(S, "muqavileler", None) or {}).get("fayllar", [])
+                             if f["ad"] not in {x["ad"] for x in yeni} and not ({m["no"][:3] for m in f["siyahi"]} & nov)]
+                    fayllar = kohne + yeni
+                    adlar = [f["ad"] for f in fayllar]
+                    S.muqavileler = {"ad": ", ".join(adlar), "adlar": adlar, "fayllar": fayllar,
+                                     "siyahi": BANK.muqavileleri_birlesdir(*(f["siyahi"] for f in fayllar))}
                 if esas:
                     sablon, muq = S.sablon, getattr(S, "muqavileler", None)
                     S.yukle(esas[0][0], dovr, orijinal_ad=esas[0][1], progress=progress)
@@ -596,6 +602,16 @@ def sohbet(m: Mesaj):
         netice = T.cagir(S, plan[0], plan[1])
         S.tarixce += [{"role": "user", "content": m.mesaj}, {"role": "assistant", "content": netice["metn"]}]
         return {"cavab": netice["metn"], "hadiseler": [{"alet": plan[0], "args": plan[1], "ui": netice.get("ui")}]}
+    if re.search(r"inteqrasiya|sablon\w*\s+doldur|\b1c\b", T.norm(m.mesaj)) and not S.bank:
+        # inteqrasiya bank çıxarışından hazırlanır: nə yüklənib, nə çatışmır — açıq deyilir
+        muq = getattr(S, "muqavileler", None)
+        hazir = ([f"✓ şablon: «{S.sablon['ad']}»"] if getattr(S, "sablon", None) else []) + \
+            ([f"✓ müqavilə faylları: {muq['ad']} ({len(muq['siyahi'])} müqavilə)"] if muq else [])
+        return {"cavab": "İnteqrasiya faylı bank çıxarışından hazırlanır, çıxarış isə hələ yüklənməyib. 📎 ilə bank çıxarışını "
+                         "yükləyin" + (" — yüklənən kimi bunlarla birlikdə işləyəcəyəm:\n" + "\n".join(hazir) if hazir else
+                                       " (istəsəniz, inteqrasiya şablonu və bitki / heyvan müqavilə faylları ilə birlikdə).")
+                         + ("\n\nAçıq olan «" + S.excel["ad"] + "» bank çıxarışı kimi tanınmadı." if getattr(S, "excel", None) else ""),
+                "hadiseler": [], "fayl_lazim": True}
     if not S.fayl_var:
         # sual yadda qalır: fayl yüklənən kimi interfeys onu təkrar soruşmadan cavablandırır
         return {"cavab": "Bu sual üçün fayl lazımdır. 📎 düyməsi ilə Excel faylını əlavə edin — yüklənən kimi sualınızı cavablandıracağam.",

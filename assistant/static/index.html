@@ -525,7 +525,7 @@ function sideAlt(r){
   $("#faylBas").textContent = ad + (r.uzlasma ? " · " + r.dovr_sonu.split("-").reverse().join(".") : "");
 }
 // Server versiyası: kod yenilənib, server köhnə qalıbsa, bu yazı köhnə versiyanı göstərir
-const UI_VERSIYA = "1.23.0";
+const UI_VERSIYA = "1.23.1";
 function versiyaCiz(r){
   let el = $("#versiya");
   if(!el){ el = document.createElement("div"); el.id = "versiya"; $("#yan").appendChild(el); }
@@ -929,8 +929,11 @@ async function isiIzle(is, sessiz = false){
   if(j.uzlasma){ $("#dovr").value = j.dovr_sonu; sonDovr = j.dovr_sonu; }
   let mesaj, hadiseler;
   // müqavilə faylı (müqavilə nömrəsi olmayan mədaxillər üçün)
-  const muqMetn = j.muqavile && secilmisFayllar.some(f => f.name === j.muqavile.ad)
-    ? `«${j.muqavile.ad}» müqavilə faylı kimi qəbul olundu: ${reqemF(j.muqavile.say)} müqavilə, ${reqemF(j.muqavile.uygun)}-i «Ödəniş gözləyir» və ya «Aktiv». ` +
+  const muqAdlar = j.muqavile ? (j.muqavile.adlar || [j.muqavile.ad]) : [];
+  const muqYeni = muqAdlar.filter(a => secilmisFayllar.some(f => f.name === a));  // bitki + heyvan: bir neçə fayl
+  const muqMetn = muqYeni.length
+    ? `«${muqYeni.join("», «")}» müqavilə faylı kimi qəbul olundu${muqAdlar.length > muqYeni.length ? " (əvvəlkilərlə birləşdi)" : ""}: ` +
+      `${reqemF(j.muqavile.say)} müqavilə, ${reqemF(j.muqavile.uygun)}-i «Ödəniş gözləyir» və ya «Aktiv». ` +
       "Müqavilə nömrəsi olmayan mədaxilləri Sığortalı Fin/Voen ilə bunlara tutuşduracağam; qərarı siz verəcəksiniz." : "";
   if(j.yalniz_muqavile){
     basliq(BASLIQ); faylVar = true; $("#main").classList.remove("bos");
