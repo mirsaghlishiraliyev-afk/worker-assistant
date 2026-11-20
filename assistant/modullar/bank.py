@@ -668,9 +668,16 @@ def _madde_suali(b, kod, muqavilesiz, say):
 # Sığorta müqavilələrinin siyahısı (məs. sistemdən «query_result»): mədaxil Sığortalı Fin/Voen ilə müqaviləyə bağlanır,
 # məbləğ «Aqrar sığorta haqqı» ilə tutuşdurulur. Qərarı mühasib verir; seçilən nömrə inteqrasiya faylına yazılır.
 MUQ_ROLLAR = {"no": r"sigorta muqavilesinin nomresi|muqavile\w* nomre", "fin": r"sigortali fin|fin\s*/\s*voen",
-              "aqrar": r"aqrar sigorta haqqi", "status": r"^status", "ad": r"sigortali adi", "yekun": r"yekun sigorta haqqi"}
-MUQ_STATUSLAR = ("odenis gozleyir", "aktiv")  # yalnız bu statuslu müqavilələr uyğunlaşdırılır
+              "aqrar": r"aqrar sigorta haqqi|aqrar sigortali terefinden odenilen", "status": r"^status", "ad": r"sigortali adi", "yekun": r"yekun sigorta haqqi"}
+# «aqrar»: bitki faylında «Aqrar sığorta haqqı», heyvan faylında «Aqrar Sığortalı tərəfindən ödənilən sığorta haqqı»
+MUQ_STATUSLAR = ("odenis gozleyir", "aktiv")  # bu statuslu («Aktivdir» də) müqavilələr əvvəl uyğunlaşdırılır; tapılmasa —
+# başqa statuslular (məs. «Müqavilənin müddəti bitib») xəbərdarlıqla mühasibə təklif olunur
 MUQ_DOZUM = 0.01
+
+
+def _yuvarlaq(mebleg, cem):
+    """Sığortalı haqqı tam manata yuxarı yuvarlaqlaşdırıb ödəyib (məs. 1015,17 → 1016): fərq 0–1 manat."""
+    return MUQ_DOZUM < round(mebleg - cem, 2) < 1 and float(mebleg).is_integer()
 # müqavilə ilə yalnız sığorta haqqı ola biləcək mədaxillər tutuşdurulur; qaytarılma, depozit, faiz, ezamiyyə, əmək haqqı,
 # təlim, subroqasiya sığorta müqaviləsinə aid deyil
 MUQ_KATEQORIYALAR = ("sigorta_haqqi", "yoxlanmali", "diger")
@@ -708,7 +715,7 @@ def muqavile_oxu(fayl):
     """Müqavilələr: [{no, fin, ad, aqrar, status, uygun}] — uygun: status «Ödəniş gözləyir» və ya «Aktiv»."""
     vereq, i, cols = _muq_basliq(fayl)
     df = pd.read_excel(fayl, sheet_name=vereq, header=None, skiprows=i + 1, dtype=object)
-    out = []
+    out, gorulen = [], set()
     for r in df.itertuples(index=False):
         def al(rol):
             x = r[cols[rol]] if rol in cols and cols[rol] < len(r) else None
@@ -716,11 +723,23 @@ def muqavile_oxu(fayl):
         no, aqrar = str(al("no") or "").strip(), _reqem(al("aqrar"))
         if not no or aqrar is None or pd.isna(aqrar):
             continue
+        if no.upper() in gorulen:  # heyvan faylında hər heyvan ayrıca sətirdir: müqavilə bir dəfə götürülür
+            continue
+        gorulen.add(no.upper())
         status = str(al("status") or "").strip()
         out.append({"no": no.upper(), "fin": re.sub(r"\W", "", str(al("fin") or "")).upper(), "ad": str(al("ad") or "").strip(),
                     "aqrar": round(float(aqrar), 2), "status": status,
-                    "uygun": not status or norm(status).strip() in MUQ_STATUSLAR})
+                    "uygun": not status or norm(status).strip().startswith(MUQ_STATUSLAR)})
     return out
+
+
+def muqavileleri_birlesdir(*siyahilar):
+    """Bir neçə müqavilə faylı (bitki + heyvan): nömrəyə görə təkrarsız birləşdirilir (sonrakı fayl yeniləyir)."""
+    d = {}
+    for s in siyahilar:
+        for m in s or []:
+            d[m["no"]] = m
+    return list(d.values())
 
 
 def _fin(r):
@@ -738,12 +757,15 @@ def _namizedler(r, muqler, tutulan):
     """Mədaxil üçün namizəd müqavilələr: FİN ilə (yoxdursa — adla); statusu uyğun; başqa sətrə verilməmiş;
     təyinatda «heyvan» varsa yalnız HS-, «bitki»/«ting» varsa yalnız BS- müqavilələr."""
     f, nov = _fin(r), muqavile_novu(r)
-    hazir = [m for m in muqler if m["uygun"] and m["no"] not in tutulan and (not nov or m["no"].startswith(nov + "-"))]
-    ms = [m for m in hazir if f and m["fin"] == f]
-    if not ms and r.get("odeyici"):
-        ad = norm(r["odeyici"]).strip()
-        ms = [m for m in hazir if m["ad"] and norm(m["ad"]).strip() == ad]
-    return ms
+    def tap(hazir):
+        ms = [m for m in hazir if f and m["fin"] == f]
+        if not ms and r.get("odeyici"):
+            ad = norm(r["odeyici"]).strip()
+            ms = [m for m in hazir if m["ad"] and norm(m["ad"]).strip() == ad]
+        return ms
+    hamisi = [m for m in muqler if m["no"] not in tutulan and (not nov or m["no"].startswith(nov + "-"))]
+    # əvvəl «Ödəniş gözləyir» / «Aktiv»; yoxdursa — başqa statuslu (müddəti bitib və s.): mühasib qərar verir
+    return tap([m for m in hamisi if m["uygun"]]) or tap([m for m in hamisi if not m["uygun"]])
 
 
 def muqavile_tehlil(r, ms):
@@ -754,13 +776,16 @@ def muqavile_tehlil(r, ms):
     deqiq = [v for v in tek if abs(v["ferq"]) <= MUQ_DOZUM]
     if deqiq:
         return "üst-üstə düşür", [dict(v, nov="deqiq") for v in deqiq]
+    yuv = [v for v in tek if _yuvarlaq(mebleg, v["cem"])]
+    if yuv:
+        return "üst-üstə düşür (manata yuvarlaqlaşdırılıb)", [dict(v, nov="yuvarlaq") for v in yuv]
     kombo = []
     maks = 4 if len(ms) <= 20 else (3 if len(ms) <= 60 else 2)
     for k in range(2, min(maks, len(ms)) + 1):
         for c in combinations(ms, k):
             cem = round(sum(m["aqrar"] for m in c), 2)
-            if abs(cem - mebleg) <= MUQ_DOZUM:
-                kombo.append({"nomreler": [m["no"] for m in c], "cem": cem, "ferq": 0.0, "nov": "kombo"})
+            if abs(cem - mebleg) <= MUQ_DOZUM or _yuvarlaq(mebleg, cem):
+                kombo.append({"nomreler": [m["no"] for m in c], "cem": cem, "ferq": round(mebleg - cem, 2), "nov": "kombo"})
                 if len(kombo) >= 3:
                     break
         if kombo:
@@ -784,14 +809,17 @@ def _muq_suali(b, r, ms, novbe, cem):
             f" (FİN/VÖEN: {_fin(r) or '—'}). Bu FİN-ə {len(ms)} müqavilə var"
             + {"HS": " (təyinatda «heyvan»: yalnız HS- müqavilələr)", "BS": " (təyinatda «bitki/ting»: yalnız BS- müqavilələr)", None: ""}[muqavile_novu(r)]
             + f". Nəticə: **{netice}**.\n{sira}\n"
-            "Hansı müqaviləyə aiddir? Düyməni seçin və ya nömrəni yazın.")
-    isare = {"deqiq": "✓", "kombo": "✓", "yaxin": "≈", "uzaq": "≠"}
+            + ("⚠ Bu FİN-in «Ödəniş gözləyir» / «Aktiv» statuslu müqaviləsi yoxdur — yuxarıdakıların statusuna baxın.\n"
+               if not any(m["uygun"] for m in ms) else "")
+            + "Hansı müqaviləyə aiddir? Düyməni seçin və ya nömrəni yazın.")
+    isare = {"deqiq": "✓", "yuvarlaq": "✓", "kombo": "✓", "yaxin": "≈", "uzaq": "≠"}
     var = []
     for v in variantlar:
         nomre = " + ".join(v["nomreler"])
-        izah = "üst-üstə" if v["nov"] in ("deqiq", "kombo") else f"fərq {_f(v['ferq'])}"
+        izah = ("üst-üstə" if v["nov"] in ("deqiq", "kombo") and abs(v["ferq"]) <= MUQ_DOZUM else
+                 f"yuvarlaq, +{_f(v['ferq'])}" if v["nov"] in ("yuvarlaq", "kombo") else f"fərq {_f(v['ferq'])}")
         var.append({"etiket": f"{isare[v['nov']]} {nomre} ({_f(v['cem'])}; {izah})",
-                    "mesaj": f"{r['setir']}-ci sətir müqaviləsi {', '.join(v['nomreler'])}", **({"esas": True} if v["nov"] in ("deqiq", "kombo") else {})})
+                    "mesaj": f"{r['setir']}-ci sətir müqaviləsi {', '.join(v['nomreler'])}", **({"esas": True} if v["nov"] in ("deqiq", "yuvarlaq", "kombo") else {})})
     if len(ms) > 1:  # bu FİN-in bütün müqavilələri (hər biri öz Aqrar sığorta haqqı ilə)
         cem = round(sum(m["aqrar"] for m in ms), 2)
         var.append({"etiket": f"Hamısına ({len(ms)} müqavilə; cəmi {_f(cem)})", "mesaj": "Hamısına"})
@@ -843,6 +871,9 @@ def bank_muqavile(s, setir, muqavile=""):
                     bolgu.append((n, round(pay, 2)))
                     qalan = round(qalan - pay, 2)
             cem = round(sum(muqler[n]["aqrar"] for n in nomreler if n in muqler), 2)
+            if bolgu and MUQ_DOZUM < qalan < 1 and float(r["mebleg"]).is_integer():  # manata yuvarlaqlaşdırma: son müqaviləyə
+                bolgu[-1] = (bolgu[-1][0], round(bolgu[-1][1] + qalan, 2))
+                qalan = 0.0
             if qalan > MUQ_DOZUM:  # artıq ödənib: artıq qalan müqaviləsiz ayrıca sətir
                 bolgu.append(("", qalan))
                 qeyd = f" Diqqət: müqavilələrin cəmi {_f(cem)}, mədaxil {_f(r['mebleg'])} — artıq qalan {_f(qalan)} müqaviləsiz ayrıca sətirdir."

@@ -485,7 +485,10 @@ def _is_baslat(yollar, dovr, rejim="", kitabxanaya=True, ref=None):
                 if sablonlar:  # inteqrasiya şablonu: yadda saxlanır, 1C faylı onun üzərində doldurulur
                     S.sablon = {"yol": sablonlar[0][0], "ad": sablonlar[0][1]}
                 if muqler:  # müqavilələr: nömrəsi olmayan mədaxillər FİN ilə bunlara tutuşdurulur
-                    S.muqavileler = {"ad": muqler[0][1], "siyahi": BANK.muqavile_oxu(muqler[0][0])}
+                    evvel = getattr(S, "muqavileler", None) or {}  # bitki + heyvan: ayrı-ayrı yüklənsə də birləşir
+                    adlar = list(dict.fromkeys((evvel.get("adlar") or ([evvel["ad"]] if evvel.get("ad") else [])) + [a for _, a in muqler]))
+                    S.muqavileler = {"ad": ", ".join(adlar), "adlar": adlar, "siyahi": BANK.muqavileleri_birlesdir(
+                        evvel.get("siyahi"), *(BANK.muqavile_oxu(y) for y, _ in muqler))}
                 if esas:
                     sablon, muq = S.sablon, getattr(S, "muqavileler", None)
                     S.yukle(esas[0][0], dovr, orijinal_ad=esas[0][1], progress=progress)

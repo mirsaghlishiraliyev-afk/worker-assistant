@@ -144,3 +144,36 @@ def test_teyinata_gore_hs_ve_bs():
     assert B._namizedler(r9, k.muqavileler["siyahi"], set()) == []
     n = B.bank_muqavile(k, 9, "BS-2026000101-PS")
     assert "heyvandarlıq" not in n["metn"] and "bitkiçilik (BS-) müqaviləsidir — yoxlayın" in n["metn"]
+
+
+def _muq_fayli(yol, basliqlar, setirler):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Query result"
+    ws.append(basliqlar)
+    for r in setirler:
+        ws.append(r)
+    wb.save(yol)
+    return yol
+
+
+def test_bitki_ve_heyvan_fayllari():
+    """Heyvan faylı: «Aqrar Sığortalı tərəfindən ödənilən sığorta haqqı», hər heyvan ayrıca sətir, status «Aktivdir»;
+    bitki faylı ilə birləşir; manata yuvarlaqlaşdırılmış ödəniş üst-üstə sayılır."""
+    hb = ["Sığorta növü", "Sığorta müqaviləsinin nömrəsi", "Sığortalı Adı", "Sığortalı Fin/Voen",
+          "Aqrar Sığortalı tərəfindən ödənilən sığorta haqqı", "Heyvanin Qulaq Nömrəsi", "Status"]
+    heyvan = _muq_fayli(QOV / "heyvan.xlsx", hb, [["Heyvandarlıq", "HS-2026000901-QS", "TEST A", "7ZZ1111", 1015.17, f"AZ{i}", "Aktivdir"]
+                                                    for i in range(3)])
+    bb = ["Sığorta növü", "Sığorta müqaviləsinin nömrəsi", "Sığortalı Adı", "Sığortalı Fin/Voen", "Aqrar sığorta haqqı", "Status"]
+    bitki = _muq_fayli(QOV / "bitki.xlsx", bb, [["Bitkiçilik", "BS-2026000902-PS", "TEST B", "7ZZ2222", 40.0, "Müqavilənin müddəti bitib"]])
+    assert B.muqavile_fayli_mi(heyvan) and B.muqavile_fayli_mi(bitki)
+    h = B.muqavile_oxu(heyvan)
+    assert len(h) == 1 and h[0]["uygun"] and h[0]["aqrar"] == 1015.17                 # 3 heyvan — 1 müqavilə
+    ms = B.muqavileleri_birlesdir(h, B.muqavile_oxu(bitki), h)
+    assert sorted(m["no"] for m in ms) == ["BS-2026000902-PS", "HS-2026000901-QS"]
+    r = {"setir": 1, "mebleg": 1016.0, "t_fin_voen": "7ZZ1111", "odeyici": "TEST A", "teyinat": "heyvan sigortasi"}
+    n, v = B.muqavile_tehlil(r, B._namizedler(r, ms, set()))
+    assert n.startswith("üst-üstə düşür (manata") and v[0]["nomreler"] == ["HS-2026000901-QS"]
+    r2 = {"setir": 2, "mebleg": 40.0, "t_fin_voen": "7ZZ2222", "odeyici": "TEST B", "teyinat": "bitki"}
+    c = B._namizedler(r2, ms, set())                                                  # yalnız müddəti bitmiş: yenə təklif olunur
+    assert [m["no"] for m in c] == ["BS-2026000902-PS"] and not c[0]["uygun"]
